@@ -74,14 +74,25 @@ function initializeDatabase() {
             customer_name VARCHAR(255) NOT NULL,
             customer_email VARCHAR(255),
             customer_phone VARCHAR(50),
-            room_type ENUM('normal_room', 'cabin_room') NOT NULL,
+            room_type ENUM('normal_room', 'cabin_room') DEFAULT 'normal_room',
             room_id INT NOT NULL,
             check_in_date DATE NOT NULL,
             check_out_date DATE NOT NULL,
-            number_of_guests INT NOT NULL,
-            total_amount DECIMAL(10, 2) NOT NULL,
+            number_of_guests INT DEFAULT 1,
+            total_amount DECIMAL(10, 2) DEFAULT 0.00,
             status ENUM('pending', 'confirmed', 'checked_in', 'checked_out', 'cancelled') DEFAULT 'pending',
             special_requests TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        )",
+        
+        "CREATE TABLE IF NOT EXISTS menu (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            food_name VARCHAR(255) NOT NULL,
+            price DECIMAL(10, 2) NOT NULL,
+            description TEXT,
+            category VARCHAR(100),
+            status ENUM('available', 'unavailable') DEFAULT 'available',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         )",
@@ -98,8 +109,9 @@ function initializeDatabase() {
             tax DECIMAL(10, 2) DEFAULT 0,
             discount DECIMAL(10, 2) DEFAULT 0,
             total_amount DECIMAL(10, 2) NOT NULL,
+            order_status ENUM('pending', 'completed') DEFAULT 'pending',
             payment_status ENUM('pending', 'paid', 'cancelled') DEFAULT 'pending',
-            payment_method VARCHAR(50),
+            payment_method ENUM('cash', 'card', 'online') DEFAULT 'cash',
             notes TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -167,6 +179,62 @@ function initializeDatabase() {
         if (in_array('price_per_night', $existingColumns)) {
             $alterSql = "ALTER TABLE normal_rooms DROP COLUMN price_per_night";
             $conn->query($alterSql);
+        }
+    }
+    
+    // Check and update bookings table structure
+    $checkBookingsTable = $conn->query("SHOW TABLES LIKE 'bookings'");
+    if ($checkBookingsTable && $checkBookingsTable->num_rows > 0) {
+        $bookingsColumns = $conn->query("SHOW COLUMNS FROM bookings");
+        $existingBookingsColumns = [];
+        while ($col = $bookingsColumns->fetch_assoc()) {
+            $existingBookingsColumns[] = $col['Field'];
+        }
+        
+        // Update room_type to have default if it doesn't
+        if (in_array('room_type', $existingBookingsColumns)) {
+            $alterSql = "ALTER TABLE bookings MODIFY COLUMN room_type ENUM('normal_room', 'cabin_room') DEFAULT 'normal_room'";
+            $conn->query($alterSql);
+        }
+        
+        // Update number_of_guests to have default if it doesn't
+        if (in_array('number_of_guests', $existingBookingsColumns)) {
+            $alterSql = "ALTER TABLE bookings MODIFY COLUMN number_of_guests INT DEFAULT 1";
+            $conn->query($alterSql);
+        }
+        
+        // Update total_amount to have default if it doesn't
+        if (in_array('total_amount', $existingBookingsColumns)) {
+            $alterSql = "ALTER TABLE bookings MODIFY COLUMN total_amount DECIMAL(10, 2) DEFAULT 0.00";
+            $conn->query($alterSql);
+        }
+    }
+    
+    // Check and update order_details table structure
+    $checkOrderDetailsTable = $conn->query("SHOW TABLES LIKE 'order_details'");
+    if ($checkOrderDetailsTable && $checkOrderDetailsTable->num_rows > 0) {
+        $orderDetailsColumns = $conn->query("SHOW COLUMNS FROM order_details");
+        $existingOrderDetailsColumns = [];
+        while ($col = $orderDetailsColumns->fetch_assoc()) {
+            $existingOrderDetailsColumns[] = $col['Field'];
+        }
+        
+        // Add order_status if it doesn't exist
+        if (!in_array('order_status', $existingOrderDetailsColumns)) {
+            $alterSql = "ALTER TABLE order_details ADD COLUMN order_status ENUM('pending', 'completed') DEFAULT 'pending' AFTER total_amount";
+            $conn->query($alterSql);
+        }
+        
+        // Update payment_method to ENUM if it's not already
+        if (in_array('payment_method', $existingOrderDetailsColumns)) {
+            // Check if it's already ENUM
+            $checkColumn = $conn->query("SHOW COLUMNS FROM order_details WHERE Field = 'payment_method'");
+            if ($checkColumn && $row = $checkColumn->fetch_assoc()) {
+                if (strpos($row['Type'], 'enum') === false) {
+                    $alterSql = "ALTER TABLE order_details MODIFY COLUMN payment_method ENUM('cash', 'card', 'online') DEFAULT 'cash'";
+                    $conn->query($alterSql);
+                }
+            }
         }
     }
     

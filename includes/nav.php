@@ -26,6 +26,10 @@ $current_page = basename($_SERVER['PHP_SELF']);
             <span class="mr-3">📅</span>
             <span class="font-medium">Bookings</span>
         </a>
+        <a href="menu.php" class="flex items-center px-4 py-3 rounded-lg transition-all duration-200 <?php echo ($current_page == 'menu.php') ? 'bg-indigo-600 text-white shadow-lg' : 'text-gray-300 hover:bg-gray-800 hover:text-white'; ?>">
+            <span class="mr-3">🍔</span>
+            <span class="font-medium">Menu</span>
+        </a>
         <a href="order_details.php" class="flex items-center px-4 py-3 rounded-lg transition-all duration-200 <?php echo ($current_page == 'order_details.php') ? 'bg-indigo-600 text-white shadow-lg' : 'text-gray-300 hover:bg-gray-800 hover:text-white'; ?>">
             <span class="mr-3">📋</span>
             <span class="font-medium">Order Details</span>
@@ -76,6 +80,11 @@ $current_page = basename($_SERVER['PHP_SELF']);
         <li>
             <a href="bookings.php" class="flex items-center px-4 py-3 rounded-lg transition-all <?php echo ($current_page == 'bookings.php') ? 'bg-indigo-600 text-white' : 'text-gray-300 hover:bg-gray-800'; ?>">
                 Bookings
+            </a>
+        </li>
+        <li>
+            <a href="menu.php" class="flex items-center px-4 py-3 rounded-lg transition-all <?php echo ($current_page == 'menu.php') ? 'bg-indigo-600 text-white' : 'text-gray-300 hover:bg-gray-800'; ?>">
+                Menu
             </a>
         </li>
         <li>
