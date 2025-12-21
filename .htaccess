@@ -1,0 +1,15 @@
+# Set default directory index
+DirectoryIndex login.php index.php
+
+# Allow access to all PHP files
+<FilesMatch "\.php$">
+    Require all granted
+</FilesMatch>
+
+# Prevent directory listing
+Options -Indexes
+
+# Enable error display (for debugging - remove in production)
+php_flag display_errors On
+php_value error_reporting E_ALL
+

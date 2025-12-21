@@ -9,59 +9,88 @@ if (!isset($_SESSION['admin_logged_in'])) {
 
 $conn = getDBConnection();
 $message = '';
+$messageType = 'success';
 
 // Handle CRUD operations
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     if (isset($_POST['action'])) {
         if ($_POST['action'] == 'create') {
-            $room_number = $_POST['room_number'];
-            $cabin_type = $_POST['cabin_type'];
-            $capacity = $_POST['capacity'];
-            $price_per_night = $_POST['price_per_night'];
-            $amenities = $_POST['amenities'] ?? '';
-            $status = $_POST['status'];
+            $cabin_number = trim($_POST['cabin_number'] ?? '');
+            $capacity = intval($_POST['capacity'] ?? 0);
             
-            $stmt = $conn->prepare("INSERT INTO cabin_rooms (room_number, cabin_type, capacity, price_per_night, amenities, status) VALUES (?, ?, ?, ?, ?, ?)");
-            $stmt->bind_param("ssidss", $room_number, $cabin_type, $capacity, $price_per_night, $amenities, $status);
-            if ($stmt->execute()) {
-                $message = "Cabin room created successfully!";
+            if (empty($cabin_number) || $capacity <= 0) {
+                $message = "Please fill all required fields correctly!";
+                $messageType = 'error';
             } else {
-                $message = "Error: " . $conn->error;
+                $stmt = $conn->prepare("INSERT INTO cabin_rooms (cabin_number, capacity) VALUES (?, ?)");
+                $stmt->bind_param("si", $cabin_number, $capacity);
+                if ($stmt->execute()) {
+                    $message = "Cabin room created successfully!";
+                    $messageType = 'success';
+                    $stmt->close();
+                    $conn->close();
+                    header('Location: cabin_rooms.php?msg=' . urlencode($message) . '&type=' . $messageType);
+                    exit;
+                } else {
+                    $message = "Error: " . $conn->error;
+                    $messageType = 'error';
+                }
+                $stmt->close();
             }
-            $stmt->close();
         } elseif ($_POST['action'] == 'update') {
-            $id = $_POST['id'];
-            $room_number = $_POST['room_number'];
-            $cabin_type = $_POST['cabin_type'];
-            $capacity = $_POST['capacity'];
-            $price_per_night = $_POST['price_per_night'];
-            $amenities = $_POST['amenities'] ?? '';
-            $status = $_POST['status'];
+            $id = intval($_POST['id'] ?? 0);
+            $cabin_number = trim($_POST['cabin_number'] ?? '');
+            $capacity = intval($_POST['capacity'] ?? 0);
             
-            $stmt = $conn->prepare("UPDATE cabin_rooms SET room_number=?, cabin_type=?, capacity=?, price_per_night=?, amenities=?, status=? WHERE id=?");
-            $stmt->bind_param("ssidssi", $room_number, $cabin_type, $capacity, $price_per_night, $amenities, $status, $id);
-            if ($stmt->execute()) {
-                $message = "Cabin room updated successfully!";
+            if (empty($cabin_number) || $capacity <= 0 || $id <= 0) {
+                $message = "Please fill all required fields correctly!";
+                $messageType = 'error';
             } else {
-                $message = "Error: " . $conn->error;
+                $stmt = $conn->prepare("UPDATE cabin_rooms SET cabin_number=?, capacity=? WHERE id=?");
+                $stmt->bind_param("sii", $cabin_number, $capacity, $id);
+                if ($stmt->execute()) {
+                    $message = "Cabin room updated successfully!";
+                    $messageType = 'success';
+                    $stmt->close();
+                    $conn->close();
+                    header('Location: cabin_rooms.php?msg=' . urlencode($message) . '&type=' . $messageType);
+                    exit;
+                } else {
+                    $message = "Error: " . $conn->error;
+                    $messageType = 'error';
+                }
+                $stmt->close();
             }
-            $stmt->close();
         } elseif ($_POST['action'] == 'delete') {
-            $id = $_POST['id'];
-            $stmt = $conn->prepare("DELETE FROM cabin_rooms WHERE id=?");
-            $stmt->bind_param("i", $id);
-            if ($stmt->execute()) {
-                $message = "Cabin room deleted successfully!";
-            } else {
-                $message = "Error: " . $conn->error;
+            $id = intval($_POST['id'] ?? 0);
+            if ($id > 0) {
+                $stmt = $conn->prepare("DELETE FROM cabin_rooms WHERE id=?");
+                $stmt->bind_param("i", $id);
+                if ($stmt->execute()) {
+                    $message = "Cabin room deleted successfully!";
+                    $messageType = 'success';
+                    $stmt->close();
+                    $conn->close();
+                    header('Location: cabin_rooms.php?msg=' . urlencode($message) . '&type=' . $messageType);
+                    exit;
+                } else {
+                    $message = "Error: " . $conn->error;
+                    $messageType = 'error';
+                }
+                $stmt->close();
             }
-            $stmt->close();
         }
     }
 }
 
+// Get message from URL if redirected
+if (isset($_GET['msg'])) {
+    $message = urldecode($_GET['msg']);
+    $messageType = $_GET['type'] ?? 'success';
+}
+
 // Fetch all cabin rooms
-$rooms = $conn->query("SELECT * FROM cabin_rooms ORDER BY room_number");
+$rooms = $conn->query("SELECT * FROM cabin_rooms ORDER BY cabin_number");
 $conn->close();
 ?>
 <!DOCTYPE html>
@@ -70,120 +99,90 @@ $conn->close();
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cabin Rooms - Admin Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="assets/css/style.css">
 </head>
-<body>
-    <div class="dashboard-container">
-        <header class="dashboard-header">
-            <h1>Hotel Management System</h1>
-            <div class="header-actions">
-                <span class="admin-name">Admin</span>
-                <a href="logout.php" class="logout-btn">Logout</a>
-            </div>
-        </header>
+<body class="bg-gray-50">
+    <div class="min-h-screen">
+        <?php include 'includes/nav.php'; ?>
 
-        <nav class="dashboard-nav">
-            <button class="mobile-menu-toggle" id="mobileMenuToggle">☰</button>
-            <ul class="nav-menu" id="navMenu">
-                <li><a href="index.php">Dashboard</a></li>
-                <li><a href="tables.php">Restaurant Tables</a></li>
-                <li><a href="cabin_rooms.php" class="active">Cabin Rooms</a></li>
-                <li><a href="normal_rooms.php">Normal Rooms</a></li>
-                <li><a href="bookings.php">Bookings</a></li>
-                <li><a href="order_details.php">Order Details</a></li>
-            </ul>
-        </nav>
-
-        <main class="dashboard-main">
-            <div class="page-header">
-                <h2>Cabin Rooms Management</h2>
-                <button class="btn btn-primary" onclick="openModal('create')">Add New Cabin Room</button>
+        <main class="md:ml-64 p-4 md:p-6 lg:p-8">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+                <h2 class="text-2xl md:text-3xl font-bold text-gray-900">Cabin Rooms Management</h2>
+                <button onclick="openModal('create')" class="px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-all shadow-md hover:shadow-lg transform hover:scale-105">
+                    + Add New Cabin Room
+                </button>
             </div>
 
             <?php if ($message): ?>
-                <div class="message"><?php echo htmlspecialchars($message); ?></div>
+                <div class="mb-6 p-4 <?php echo $messageType === 'success' ? 'bg-green-50 border-l-4 border-green-500 text-green-700' : 'bg-red-50 border-l-4 border-red-500 text-red-700'; ?> rounded-lg animate-slide-up">
+                    <?php echo htmlspecialchars($message); ?>
+                    <button onclick="this.parentElement.remove()" class="float-right text-gray-500 hover:text-gray-700">×</button>
+                </div>
             <?php endif; ?>
 
-            <div class="table-container">
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>Room Number</th>
-                            <th>Cabin Type</th>
-                            <th>Capacity</th>
-                            <th>Price/Night</th>
-                            <th>Status</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php while ($row = $rooms->fetch_assoc()): ?>
-                        <tr>
-                            <td><?php echo $row['id']; ?></td>
-                            <td><?php echo htmlspecialchars($row['room_number']); ?></td>
-                            <td><?php echo htmlspecialchars($row['cabin_type']); ?></td>
-                            <td><?php echo $row['capacity']; ?></td>
-                            <td>$<?php echo number_format($row['price_per_night'], 2); ?></td>
-                            <td><span class="status-badge status-<?php echo $row['status']; ?>"><?php echo ucfirst($row['status']); ?></span></td>
-                            <td>
-                                <button class="btn btn-sm btn-edit" onclick="openModal('edit', <?php echo htmlspecialchars(json_encode($row)); ?>)">Edit</button>
-                                <button class="btn btn-sm btn-delete" onclick="deleteRecord(<?php echo $row['id']; ?>)">Delete</button>
-                            </td>
-                        </tr>
-                        <?php endwhile; ?>
-                    </tbody>
-                </table>
+            <div class="bg-white rounded-xl shadow-md overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gradient-to-r from-indigo-600 to-purple-600 text-white">
+                            <tr>
+                                <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">ID</th>
+                                <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Cabin Number</th>
+                                <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Capacity</th>
+                                <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            <?php while ($row = $rooms->fetch_assoc()): ?>
+                            <tr class="hover:bg-indigo-50 transition-colors">
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo $row['id']; ?></td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900"><?php echo htmlspecialchars($row['cabin_number']); ?></td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600"><?php echo $row['capacity']; ?> persons</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
+                                    <button onclick="openModal('edit', <?php echo htmlspecialchars(json_encode($row)); ?>)" class="px-3 py-1 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors text-xs">
+                                        Edit
+                                    </button>
+                                    <button onclick="deleteRecord(<?php echo $row['id']; ?>)" class="px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors text-xs">
+                                        Delete
+                                    </button>
+                                </td>
+                            </tr>
+                            <?php endwhile; ?>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </main>
     </div>
 
     <!-- Modal -->
-    <div id="modal" class="modal">
-        <div class="modal-content">
-            <span class="close" onclick="closeModal()">&times;</span>
-            <h3 id="modalTitle">Add New Cabin Room</h3>
-            <form method="POST" id="roomForm">
+    <div id="modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 md:p-8 animate-slide-up">
+            <div class="flex justify-between items-center mb-6">
+                <h3 id="modalTitle" class="text-2xl font-bold text-gray-900">Add New Cabin Room</h3>
+                <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+            </div>
+            <form method="POST" id="cabinForm" class="space-y-4">
                 <input type="hidden" name="action" id="formAction" value="create">
                 <input type="hidden" name="id" id="formId">
                 
-                <div class="form-group">
-                    <label for="room_number">Room Number *</label>
-                    <input type="text" id="room_number" name="room_number" required>
+                <div>
+                    <label for="cabin_number" class="block text-sm font-semibold text-gray-700 mb-2">Cabin Number *</label>
+                    <input type="text" id="cabin_number" name="cabin_number" required placeholder="e.g., C-01, Cabin 1" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
                 </div>
                 
-                <div class="form-group">
-                    <label for="cabin_type">Cabin Type *</label>
-                    <input type="text" id="cabin_type" name="cabin_type" required>
+                <div>
+                    <label for="capacity" class="block text-sm font-semibold text-gray-700 mb-2">Capacity *</label>
+                    <input type="number" id="capacity" name="capacity" min="1" required placeholder="Number of persons" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
                 </div>
                 
-                <div class="form-group">
-                    <label for="capacity">Capacity *</label>
-                    <input type="number" id="capacity" name="capacity" min="1" required>
-                </div>
-                
-                <div class="form-group">
-                    <label for="price_per_night">Price Per Night *</label>
-                    <input type="number" id="price_per_night" name="price_per_night" step="0.01" min="0" required>
-                </div>
-                
-                <div class="form-group">
-                    <label for="amenities">Amenities</label>
-                    <textarea id="amenities" name="amenities" rows="3"></textarea>
-                </div>
-                
-                <div class="form-group">
-                    <label for="status">Status *</label>
-                    <select id="status" name="status" required>
-                        <option value="available">Available</option>
-                        <option value="occupied">Occupied</option>
-                        <option value="maintenance">Maintenance</option>
-                    </select>
-                </div>
-                
-                <div class="form-actions">
-                    <button type="submit" class="btn btn-primary">Save</button>
-                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                <div class="flex gap-3 pt-4">
+                    <button type="submit" class="flex-1 px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-all">
+                        Save
+                    </button>
+                    <button type="button" onclick="closeModal()" class="flex-1 px-6 py-3 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300 transition-all">
+                        Cancel
+                    </button>
                 </div>
             </form>
         </div>
@@ -197,46 +196,59 @@ $conn->close();
 
     <script src="assets/js/main.js"></script>
     <script>
-        function openModal(action, data = null) {
+        // Ensure functions are available globally
+        window.openModal = function(action, data = null) {
             const modal = document.getElementById('modal');
-            const form = document.getElementById('roomForm');
+            if (!modal) {
+                console.error('Modal element not found');
+                return;
+            }
+            const form = document.getElementById('cabinForm');
+            if (!form) {
+                console.error('Form element not found');
+                return;
+            }
+            
             document.getElementById('formAction').value = action;
             document.getElementById('modalTitle').textContent = action === 'create' ? 'Add New Cabin Room' : 'Edit Cabin Room';
             
             if (action === 'edit' && data) {
                 document.getElementById('formId').value = data.id;
-                document.getElementById('room_number').value = data.room_number;
-                document.getElementById('cabin_type').value = data.cabin_type;
-                document.getElementById('capacity').value = data.capacity;
-                document.getElementById('price_per_night').value = data.price_per_night;
-                document.getElementById('amenities').value = data.amenities || '';
-                document.getElementById('status').value = data.status;
+                document.getElementById('cabin_number').value = data.cabin_number || '';
+                document.getElementById('capacity').value = data.capacity || '';
             } else {
                 form.reset();
                 document.getElementById('formId').value = '';
             }
             
-            modal.style.display = 'block';
-        }
+            modal.classList.remove('hidden');
+        };
         
-        function closeModal() {
-            document.getElementById('modal').style.display = 'none';
-        }
+        window.closeModal = function() {
+            const modal = document.getElementById('modal');
+            if (modal) {
+                modal.classList.add('hidden');
+            }
+        };
         
-        function deleteRecord(id) {
+        window.deleteRecord = function(id) {
             if (confirm('Are you sure you want to delete this cabin room?')) {
                 document.getElementById('deleteId').value = id;
                 document.getElementById('deleteForm').submit();
             }
-        }
+        };
         
-        window.onclick = function(event) {
+        // Modal click outside to close
+        document.addEventListener('DOMContentLoaded', function() {
             const modal = document.getElementById('modal');
-            if (event.target == modal) {
-                closeModal();
+            if (modal) {
+                modal.addEventListener('click', function(e) {
+                    if (e.target === this) {
+                        closeModal();
+                    }
+                });
             }
-        }
+        });
     </script>
 </body>
 </html>
-

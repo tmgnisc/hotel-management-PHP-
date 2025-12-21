@@ -14,77 +14,80 @@ if (!isset($_SESSION['admin_logged_in'])) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Hotel Management System - Admin Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="assets/css/style.css">
 </head>
-<body>
-    <div class="dashboard-container">
-        <header class="dashboard-header">
-            <h1>Hotel Management System</h1>
-            <div class="header-actions">
-                <span class="admin-name">Admin</span>
-                <a href="logout.php" class="logout-btn">Logout</a>
-            </div>
-        </header>
+<body class="bg-gray-50">
+    <div class="min-h-screen">
+        <?php include 'includes/nav.php'; ?>
 
-        <nav class="dashboard-nav">
-            <button class="mobile-menu-toggle" id="mobileMenuToggle">☰</button>
-            <ul class="nav-menu" id="navMenu">
-                <li><a href="index.php" class="active">Dashboard</a></li>
-                <li><a href="tables.php">Restaurant Tables</a></li>
-                <li><a href="cabin_rooms.php">Cabin Rooms</a></li>
-                <li><a href="normal_rooms.php">Normal Rooms</a></li>
-                <li><a href="bookings.php">Bookings</a></li>
-                <li><a href="order_details.php">Order Details</a></li>
-            </ul>
-        </nav>
-
-        <main class="dashboard-main">
-            <div class="dashboard-stats">
-                <div class="stat-card">
-                    <h3>Total Tables</h3>
-                    <?php
-                    $conn = getDBConnection();
-                    $result = $conn->query("SELECT COUNT(*) as total FROM tables");
-                    $row = $result->fetch_assoc();
-                    echo "<p class=\"stat-number\">" . $row['total'] . "</p>";
-                    $conn->close();
-                    ?>
+        <main class="md:ml-64 p-4 md:p-6 lg:p-8">
+            <!-- Stats Cards -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6 md:mb-8">
+                <?php
+                $conn = getDBConnection();
+                $result = $conn->query("SELECT COUNT(*) as total FROM tables");
+                $tables_count = $result->fetch_assoc()['total'];
+                
+                $result = $conn->query("SELECT COUNT(*) as total FROM cabin_rooms");
+                $cabin_count = $result->fetch_assoc()['total'];
+                
+                $result = $conn->query("SELECT COUNT(*) as total FROM normal_rooms");
+                $normal_count = $result->fetch_assoc()['total'];
+                
+                $result = $conn->query("SELECT COUNT(*) as total FROM bookings WHERE status IN ('pending', 'confirmed', 'checked_in')");
+                $bookings_count = $result->fetch_assoc()['total'];
+                $conn->close();
+                ?>
+                
+                <div class="bg-white rounded-xl shadow-md hover:shadow-xl transition-all duration-300 p-6 border-l-4 border-indigo-500">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium text-gray-600 uppercase tracking-wide">Total Tables</p>
+                            <p class="text-3xl font-bold text-indigo-600 mt-2"><?php echo $tables_count; ?></p>
+                        </div>
+                        <div class="text-4xl opacity-20">🍽️</div>
+                    </div>
                 </div>
-                <div class="stat-card">
-                    <h3>Cabin Rooms</h3>
-                    <?php
-                    $conn = getDBConnection();
-                    $result = $conn->query("SELECT COUNT(*) as total FROM cabin_rooms");
-                    $row = $result->fetch_assoc();
-                    echo "<p class=\"stat-number\">" . $row['total'] . "</p>";
-                    $conn->close();
-                    ?>
+                
+                <div class="bg-white rounded-xl shadow-md hover:shadow-xl transition-all duration-300 p-6 border-l-4 border-purple-500">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium text-gray-600 uppercase tracking-wide">Cabin Rooms</p>
+                            <p class="text-3xl font-bold text-purple-600 mt-2"><?php echo $cabin_count; ?></p>
+                        </div>
+                        <div class="text-4xl opacity-20">🏕️</div>
+                    </div>
                 </div>
-                <div class="stat-card">
-                    <h3>Normal Rooms</h3>
-                    <?php
-                    $conn = getDBConnection();
-                    $result = $conn->query("SELECT COUNT(*) as total FROM normal_rooms");
-                    $row = $result->fetch_assoc();
-                    echo "<p class=\"stat-number\">" . $row['total'] . "</p>";
-                    $conn->close();
-                    ?>
+                
+                <div class="bg-white rounded-xl shadow-md hover:shadow-xl transition-all duration-300 p-6 border-l-4 border-pink-500">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium text-gray-600 uppercase tracking-wide">Normal Rooms</p>
+                            <p class="text-3xl font-bold text-pink-600 mt-2"><?php echo $normal_count; ?></p>
+                        </div>
+                        <div class="text-4xl opacity-20">🛏️</div>
+                    </div>
                 </div>
-                <div class="stat-card">
-                    <h3>Active Bookings</h3>
-                    <?php
-                    $conn = getDBConnection();
-                    $result = $conn->query("SELECT COUNT(*) as total FROM bookings WHERE status IN ('pending', 'confirmed', 'checked_in')");
-                    $row = $result->fetch_assoc();
-                    echo "<p class=\"stat-number\">" . $row['total'] . "</p>";
-                    $conn->close();
-                    ?>
+                
+                <div class="bg-white rounded-xl shadow-md hover:shadow-xl transition-all duration-300 p-6 border-l-4 border-green-500">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium text-gray-600 uppercase tracking-wide">Active Bookings</p>
+                            <p class="text-3xl font-bold text-green-600 mt-2"><?php echo $bookings_count; ?></p>
+                        </div>
+                        <div class="text-4xl opacity-20">📅</div>
+                    </div>
                 </div>
             </div>
 
-            <div class="dashboard-content">
-                <h2>Welcome to Admin Dashboard</h2>
-                <p>Manage your hotel operations efficiently using the navigation menu above.</p>
+            <!-- Welcome Card -->
+            <div class="bg-white rounded-xl shadow-md p-6 md:p-8">
+                <h2 class="text-2xl md:text-3xl font-bold text-gray-900 mb-3">Welcome to Admin Dashboard</h2>
+                <p class="text-gray-600 leading-relaxed">
+                    Manage your hotel operations efficiently using the navigation menu. You can manage restaurant tables, 
+                    cabin rooms, normal rooms, bookings, and order details all from this centralized dashboard.
+                </p>
             </div>
         </main>
     </div>
@@ -92,4 +95,3 @@ if (!isset($_SESSION['admin_logged_in'])) {
     <script src="assets/js/main.js"></script>
 </body>
 </html>
-

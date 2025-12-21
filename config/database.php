@@ -31,24 +31,28 @@ function initializeDatabase() {
     
     // Create tables
     $tables = [
+        "CREATE TABLE IF NOT EXISTS superadmin (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            username VARCHAR(100) NOT NULL UNIQUE,
+            password VARCHAR(255) NOT NULL,
+            email VARCHAR(255),
+            full_name VARCHAR(255),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        )",
+        
         "CREATE TABLE IF NOT EXISTS tables (
             id INT AUTO_INCREMENT PRIMARY KEY,
             table_number VARCHAR(50) NOT NULL UNIQUE,
             capacity INT NOT NULL,
-            status ENUM('available', 'occupied', 'reserved') DEFAULT 'available',
-            location VARCHAR(100),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         )",
         
         "CREATE TABLE IF NOT EXISTS cabin_rooms (
             id INT AUTO_INCREMENT PRIMARY KEY,
-            room_number VARCHAR(50) NOT NULL UNIQUE,
-            cabin_type VARCHAR(100) NOT NULL,
+            cabin_number VARCHAR(50) NOT NULL UNIQUE,
             capacity INT NOT NULL,
-            price_per_night DECIMAL(10, 2) NOT NULL,
-            amenities TEXT,
-            status ENUM('available', 'occupied', 'maintenance') DEFAULT 'available',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         )",
@@ -56,11 +60,10 @@ function initializeDatabase() {
         "CREATE TABLE IF NOT EXISTS normal_rooms (
             id INT AUTO_INCREMENT PRIMARY KEY,
             room_number VARCHAR(50) NOT NULL UNIQUE,
-            room_type VARCHAR(100) NOT NULL,
-            capacity INT NOT NULL,
-            price_per_night DECIMAL(10, 2) NOT NULL,
-            amenities TEXT,
+            room_type ENUM('deluxe', 'standard', 'normal') NOT NULL,
+            capacity_type ENUM('single bed', 'double bed', 'group') NOT NULL,
             status ENUM('available', 'occupied', 'maintenance') DEFAULT 'available',
+            amenities TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         )",
@@ -109,6 +112,18 @@ function initializeDatabase() {
         if (!$conn->query($sql)) {
             echo "Error creating table: " . $conn->error . "<br>";
         }
+    }
+    
+    // Create default superadmin if not exists
+    $conn->select_db(DB_NAME);
+    $checkAdmin = $conn->query("SELECT COUNT(*) as count FROM superadmin");
+    $adminExists = $checkAdmin->fetch_assoc()['count'];
+    
+    if ($adminExists == 0) {
+        // Default admin: admin/admin (password is hashed)
+        $defaultPassword = password_hash('admin', PASSWORD_DEFAULT);
+        $insertAdmin = "INSERT INTO superadmin (username, password, email, full_name) VALUES ('admin', '$defaultPassword', 'admin@hotel.com', 'Super Admin')";
+        $conn->query($insertAdmin);
     }
     
     $conn->close();

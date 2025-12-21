@@ -91,25 +91,7 @@ $conn->close();
 </head>
 <body>
     <div class="dashboard-container">
-        <header class="dashboard-header">
-            <h1>Hotel Management System</h1>
-            <div class="header-actions">
-                <span class="admin-name">Admin</span>
-                <a href="logout.php" class="logout-btn">Logout</a>
-            </div>
-        </header>
-
-        <nav class="dashboard-nav">
-            <button class="mobile-menu-toggle" id="mobileMenuToggle">☰</button>
-            <ul class="nav-menu" id="navMenu">
-                <li><a href="index.php">Dashboard</a></li>
-                <li><a href="tables.php">Restaurant Tables</a></li>
-                <li><a href="cabin_rooms.php">Cabin Rooms</a></li>
-                <li><a href="normal_rooms.php">Normal Rooms</a></li>
-                <li><a href="bookings.php">Bookings</a></li>
-                <li><a href="order_details.php" class="active">Order Details</a></li>
-            </ul>
-        </nav>
+        <?php include 'includes/nav.php'; ?>
 
         <main class="dashboard-main">
             <div class="page-header">
