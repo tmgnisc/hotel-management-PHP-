@@ -111,8 +111,6 @@ if (isset($_SESSION['admin_logged_in'])) {
                     Login
                 </button>
             </form>
-            
-            <p class="text-center mt-6 text-sm text-gray-500 italic">Default credentials: admin / admin</p>
         </div>
     </div>
     <script src="assets/js/main.js"></script>

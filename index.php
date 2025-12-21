@@ -100,7 +100,7 @@ if (!isset($_SESSION['admin_logged_in'])) {
                     <div class="flex items-center justify-between">
                         <div>
                             <p class="text-sm font-medium text-green-100 uppercase tracking-wide mb-2">Total Profit</p>
-                            <p class="text-4xl md:text-5xl font-bold text-white">$<?php echo number_format($profit_amount, 2); ?></p>
+                            <p class="text-4xl md:text-5xl font-bold text-white">Rs <?php echo number_format($profit_amount, 2); ?></p>
                             <p class="text-sm text-green-100 mt-2">From completed & paid orders</p>
                         </div>
                         <div class="text-6xl opacity-30">💰</div>

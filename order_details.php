@@ -319,7 +319,7 @@ $conn->close();
                     <input type="hidden" name="food_items[]" value="${foodId}">
                     <div class="flex-1">
                         <div class="font-medium text-gray-900">${food.name}</div>
-                        <div class="text-sm text-gray-600">Price: $${food.price.toFixed(2)}</div>
+                        <div class="text-sm text-gray-600">Price: Rs ${food.price.toFixed(2)}</div>
                     </div>
                     <div class="flex items-center gap-2">
                         <label class="text-sm text-gray-700">Qty:</label>
@@ -406,7 +406,7 @@ $conn->close();
                                     <?php echo $row['order_date'] ? date('M d, Y H:i', strtotime($row['order_date'])) : 'N/A'; ?>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">
-                                    $<?php echo number_format($row['total_amount'], 2); ?>
+                                    Rs <?php echo number_format($row['total_amount'], 2); ?>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap">
                                     <?php
@@ -494,7 +494,7 @@ $conn->close();
                             $menuItems->data_seek(0);
                             while ($menu = $menuItems->fetch_assoc()): ?>
                                 <option value="<?php echo $menu['id']; ?>" data-price="<?php echo $menu['price']; ?>">
-                                    <?php echo htmlspecialchars($menu['food_name']); ?> - $<?php echo number_format($menu['price'], 2); ?>
+                                    <?php echo htmlspecialchars($menu['food_name']); ?> - Rs <?php echo number_format($menu['price'], 2); ?>
                                 </option>
                             <?php endwhile; ?>
                         </select>

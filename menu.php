@@ -205,7 +205,7 @@ $conn->close();
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo $row['id']; ?></td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900"><?php echo htmlspecialchars($row['food_name']); ?></td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600 font-semibold">
-                                    $<?php echo number_format($row['price'], 2); ?>
+                                    Rs <?php echo number_format($row['price'], 2); ?>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
                                     <button onclick="openModal('edit', <?php echo htmlspecialchars(json_encode($row)); ?>)" class="px-3 py-1 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors text-xs">
