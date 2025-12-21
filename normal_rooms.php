@@ -1,4 +1,8 @@
 <?php
+// Enable error reporting for debugging
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
 session_start();
 require_once 'config/database.php';
 
@@ -9,57 +13,112 @@ if (!isset($_SESSION['admin_logged_in'])) {
 
 $conn = getDBConnection();
 $message = '';
+$messageType = 'success';
 
 // Handle CRUD operations
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     if (isset($_POST['action'])) {
         if ($_POST['action'] == 'create') {
-            $room_number = $_POST['room_number'];
-            $room_type = $_POST['room_type'];
-            $capacity_type = $_POST['capacity_type'];
-            $status = $_POST['status'];
-            $amenities = $_POST['amenities'] ?? '';
+            $room_number = trim($_POST['room_number'] ?? '');
+            $room_type = trim($_POST['room_type'] ?? '');
+            $capacity_type = trim($_POST['capacity_type'] ?? '');
+            $status = trim($_POST['status'] ?? '');
+            $amenities = trim($_POST['amenities'] ?? '');
             
-            $stmt = $conn->prepare("INSERT INTO normal_rooms (room_number, room_type, capacity_type, status, amenities) VALUES (?, ?, ?, ?, ?)");
-            $stmt->bind_param("sssss", $room_number, $room_type, $capacity_type, $status, $amenities);
-            if ($stmt->execute()) {
-                $message = "Normal room created successfully!";
+            if (empty($room_number) || empty($room_type) || empty($capacity_type) || empty($status)) {
+                $message = "Please fill all required fields correctly!";
+                $messageType = 'error';
             } else {
-                $message = "Error: " . $conn->error;
+                $stmt = $conn->prepare("INSERT INTO normal_rooms (room_number, room_type, capacity_type, status, amenities) VALUES (?, ?, ?, ?, ?)");
+                if ($stmt) {
+                    $stmt->bind_param("sssss", $room_number, $room_type, $capacity_type, $status, $amenities);
+                    if ($stmt->execute()) {
+                        $message = "Normal room created successfully!";
+                        $messageType = 'success';
+                        $stmt->close();
+                        $conn->close();
+                        header('Location: normal_rooms.php?msg=' . urlencode($message) . '&type=' . $messageType);
+                        exit;
+                    } else {
+                        $message = "Error executing query: " . $stmt->error;
+                        $messageType = 'error';
+                    }
+                    $stmt->close();
+                } else {
+                    $message = "Error preparing statement: " . $conn->error;
+                    $messageType = 'error';
+                }
             }
-            $stmt->close();
         } elseif ($_POST['action'] == 'update') {
-            $id = $_POST['id'];
-            $room_number = $_POST['room_number'];
-            $room_type = $_POST['room_type'];
-            $capacity_type = $_POST['capacity_type'];
-            $status = $_POST['status'];
-            $amenities = $_POST['amenities'] ?? '';
+            $id = intval($_POST['id'] ?? 0);
+            $room_number = trim($_POST['room_number'] ?? '');
+            $room_type = trim($_POST['room_type'] ?? '');
+            $capacity_type = trim($_POST['capacity_type'] ?? '');
+            $status = trim($_POST['status'] ?? '');
+            $amenities = trim($_POST['amenities'] ?? '');
             
-            $stmt = $conn->prepare("UPDATE normal_rooms SET room_number=?, room_type=?, capacity_type=?, status=?, amenities=? WHERE id=?");
-            $stmt->bind_param("sssssi", $room_number, $room_type, $capacity_type, $status, $amenities, $id);
-            if ($stmt->execute()) {
-                $message = "Normal room updated successfully!";
+            if (empty($room_number) || empty($room_type) || empty($capacity_type) || empty($status) || $id <= 0) {
+                $message = "Please fill all required fields correctly!";
+                $messageType = 'error';
             } else {
-                $message = "Error: " . $conn->error;
+                $stmt = $conn->prepare("UPDATE normal_rooms SET room_number=?, room_type=?, capacity_type=?, status=?, amenities=? WHERE id=?");
+                if ($stmt) {
+                    $stmt->bind_param("sssssi", $room_number, $room_type, $capacity_type, $status, $amenities, $id);
+                    if ($stmt->execute()) {
+                        $message = "Normal room updated successfully!";
+                        $messageType = 'success';
+                        $stmt->close();
+                        $conn->close();
+                        header('Location: normal_rooms.php?msg=' . urlencode($message) . '&type=' . $messageType);
+                        exit;
+                    } else {
+                        $message = "Error executing update: " . $stmt->error;
+                        $messageType = 'error';
+                    }
+                    $stmt->close();
+                } else {
+                    $message = "Error preparing update statement: " . $conn->error;
+                    $messageType = 'error';
+                }
             }
-            $stmt->close();
         } elseif ($_POST['action'] == 'delete') {
-            $id = $_POST['id'];
-            $stmt = $conn->prepare("DELETE FROM normal_rooms WHERE id=?");
-            $stmt->bind_param("i", $id);
-            if ($stmt->execute()) {
-                $message = "Normal room deleted successfully!";
-            } else {
-                $message = "Error: " . $conn->error;
+            $id = intval($_POST['id'] ?? 0);
+            if ($id > 0) {
+                $stmt = $conn->prepare("DELETE FROM normal_rooms WHERE id=?");
+                if ($stmt) {
+                    $stmt->bind_param("i", $id);
+                    if ($stmt->execute()) {
+                        $message = "Normal room deleted successfully!";
+                        $messageType = 'success';
+                        $stmt->close();
+                        $conn->close();
+                        header('Location: normal_rooms.php?msg=' . urlencode($message) . '&type=' . $messageType);
+                        exit;
+                    } else {
+                        $message = "Error deleting: " . $stmt->error;
+                        $messageType = 'error';
+                    }
+                    $stmt->close();
+                } else {
+                    $message = "Error preparing delete statement: " . $conn->error;
+                    $messageType = 'error';
+                }
             }
-            $stmt->close();
         }
     }
 }
 
+// Get message from URL if redirected
+if (isset($_GET['msg'])) {
+    $message = urldecode($_GET['msg']);
+    $messageType = $_GET['type'] ?? 'success';
+}
+
 // Fetch all normal rooms
 $rooms = $conn->query("SELECT * FROM normal_rooms ORDER BY room_number");
+if (!$rooms) {
+    die("Error fetching rooms: " . $conn->error);
+}
 $conn->close();
 ?>
 <!DOCTYPE html>
@@ -70,6 +129,53 @@ $conn->close();
     <title>Normal Rooms - Admin Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="assets/css/style.css">
+    <!-- Define modal functions in HEAD -->
+    <script>
+        var openModal, closeModal, deleteRecord;
+        
+        (function() {
+            openModal = function(action, data) {
+                var modal = document.getElementById('modal');
+                var form = document.getElementById('roomForm');
+                
+                if (!modal || !form) {
+                    console.error('Modal or form not found');
+                    return;
+                }
+                
+                document.getElementById('formAction').value = action;
+                document.getElementById('modalTitle').textContent = action === 'create' ? 'Add New Room' : 'Edit Room';
+                
+                if (action === 'edit' && data) {
+                    document.getElementById('formId').value = data.id || '';
+                    document.getElementById('room_number').value = data.room_number || '';
+                    document.getElementById('room_type').value = data.room_type || '';
+                    document.getElementById('capacity_type').value = data.capacity_type || '';
+                    document.getElementById('status').value = data.status || '';
+                    document.getElementById('amenities').value = data.amenities || '';
+                } else {
+                    form.reset();
+                    document.getElementById('formId').value = '';
+                }
+                
+                modal.classList.remove('hidden');
+            };
+            
+            closeModal = function() {
+                var modal = document.getElementById('modal');
+                if (modal) {
+                    modal.classList.add('hidden');
+                }
+            };
+            
+            deleteRecord = function(id) {
+                if (confirm('Are you sure you want to delete this room?')) {
+                    document.getElementById('deleteId').value = id;
+                    document.getElementById('deleteForm').submit();
+                }
+            };
+        })();
+    </script>
 </head>
 <body class="bg-gray-50">
     <div class="min-h-screen">
@@ -84,8 +190,9 @@ $conn->close();
             </div>
 
             <?php if ($message): ?>
-                <div class="mb-6 p-4 bg-green-50 border-l-4 border-green-500 text-green-700 rounded-lg animate-slide-up">
+                <div class="mb-6 p-4 <?php echo $messageType === 'success' ? 'bg-green-50 border-l-4 border-green-500 text-green-700' : 'bg-red-50 border-l-4 border-red-500 text-red-700'; ?> rounded-lg animate-slide-up">
                     <?php echo htmlspecialchars($message); ?>
+                    <button onclick="this.parentElement.remove()" class="float-right text-gray-500 hover:text-gray-700">×</button>
                 </div>
             <?php endif; ?>
 
@@ -210,41 +317,15 @@ $conn->close();
 
     <script src="assets/js/main.js"></script>
     <script>
-        function openModal(action, data = null) {
-            const modal = document.getElementById('modal');
-            const form = document.getElementById('roomForm');
-            document.getElementById('formAction').value = action;
-            document.getElementById('modalTitle').textContent = action === 'create' ? 'Add New Room' : 'Edit Room';
-            
-            if (action === 'edit' && data) {
-                document.getElementById('formId').value = data.id;
-                document.getElementById('room_number').value = data.room_number;
-                document.getElementById('room_type').value = data.room_type;
-                document.getElementById('capacity_type').value = data.capacity_type;
-                document.getElementById('status').value = data.status;
-                document.getElementById('amenities').value = data.amenities || '';
-            } else {
-                form.reset();
-                document.getElementById('formId').value = '';
-            }
-            
-            modal.classList.remove('hidden');
-        }
-        
-        function closeModal() {
-            document.getElementById('modal').classList.add('hidden');
-        }
-        
-        function deleteRecord(id) {
-            if (confirm('Are you sure you want to delete this room?')) {
-                document.getElementById('deleteId').value = id;
-                document.getElementById('deleteForm').submit();
-            }
-        }
-        
-        document.getElementById('modal').addEventListener('click', function(e) {
-            if (e.target === this) {
-                closeModal();
+        // Modal click outside to close
+        document.addEventListener('DOMContentLoaded', function() {
+            var modal = document.getElementById('modal');
+            if (modal) {
+                modal.addEventListener('click', function(e) {
+                    if (e.target === this) {
+                        closeModal();
+                    }
+                });
             }
         });
     </script>

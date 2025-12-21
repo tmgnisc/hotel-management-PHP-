@@ -18,10 +18,6 @@ $current_page = basename($_SERVER['PHP_SELF']);
             <span class="mr-3">🍽️</span>
             <span class="font-medium">Restaurant Tables</span>
         </a>
-        <a href="cabin_rooms.php" class="flex items-center px-4 py-3 rounded-lg transition-all duration-200 <?php echo ($current_page == 'cabin_rooms.php') ? 'bg-indigo-600 text-white shadow-lg' : 'text-gray-300 hover:bg-gray-800 hover:text-white'; ?>">
-            <span class="mr-3">🏕️</span>
-            <span class="font-medium">Cabin Rooms</span>
-        </a>
         <a href="normal_rooms.php" class="flex items-center px-4 py-3 rounded-lg transition-all duration-200 <?php echo ($current_page == 'normal_rooms.php') ? 'bg-indigo-600 text-white shadow-lg' : 'text-gray-300 hover:bg-gray-800 hover:text-white'; ?>">
             <span class="mr-3">🛏️</span>
             <span class="font-medium">Normal Rooms</span>
@@ -70,11 +66,6 @@ $current_page = basename($_SERVER['PHP_SELF']);
         <li>
             <a href="tables.php" class="flex items-center px-4 py-3 rounded-lg transition-all <?php echo ($current_page == 'tables.php') ? 'bg-indigo-600 text-white' : 'text-gray-300 hover:bg-gray-800'; ?>">
                 Restaurant Tables
-            </a>
-        </li>
-        <li>
-            <a href="cabin_rooms.php" class="flex items-center px-4 py-3 rounded-lg transition-all <?php echo ($current_page == 'cabin_rooms.php') ? 'bg-indigo-600 text-white' : 'text-gray-300 hover:bg-gray-800'; ?>">
-                Cabin Rooms
             </a>
         </li>
         <li>

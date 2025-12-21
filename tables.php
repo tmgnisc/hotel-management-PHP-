@@ -109,7 +109,7 @@ $conn->close();
         <main class="md:ml-64 p-4 md:p-6 lg:p-8">
             <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
                 <h2 class="text-2xl md:text-3xl font-bold text-gray-900">Restaurant Tables Management</h2>
-                <button onclick="openModal('create')" class="px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-all shadow-md hover:shadow-lg transform hover:scale-105">
+                <button type="button" id="addTableBtn" class="px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-all shadow-md hover:shadow-lg transform hover:scale-105">
                     + Add New Table
                 </button>
             </div>
@@ -139,10 +139,10 @@ $conn->close();
                                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900"><?php echo htmlspecialchars($row['table_number']); ?></td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600"><?php echo $row['capacity']; ?> persons</td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
-                                    <button onclick="openModal('edit', <?php echo htmlspecialchars(json_encode($row)); ?>)" class="px-3 py-1 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors text-xs">
+                                    <button type="button" class="edit-btn px-3 py-1 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors text-xs" data-row='<?php echo htmlspecialchars(json_encode($row)); ?>'>
                                         Edit
                                     </button>
-                                    <button onclick="deleteRecord(<?php echo $row['id']; ?>)" class="px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors text-xs">
+                                    <button type="button" class="delete-btn px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors text-xs" data-id="<?php echo $row['id']; ?>">
                                         Delete
                                     </button>
                                 </td>
@@ -160,7 +160,7 @@ $conn->close();
         <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 md:p-8 animate-slide-up">
             <div class="flex justify-between items-center mb-6">
                 <h3 id="modalTitle" class="text-2xl font-bold text-gray-900">Add New Table</h3>
-                <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+                <button type="button" id="closeModalBtn" class="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
             </div>
             <form method="POST" id="tableForm" class="space-y-4">
                 <input type="hidden" name="action" id="formAction" value="create">
@@ -180,7 +180,7 @@ $conn->close();
                     <button type="submit" class="flex-1 px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-all">
                         Save
                     </button>
-                    <button type="button" onclick="closeModal()" class="flex-1 px-6 py-3 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300 transition-all">
+                    <button type="button" id="cancelBtn" class="flex-1 px-6 py-3 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300 transition-all">
                         Cancel
                     </button>
                 </div>
@@ -196,50 +196,101 @@ $conn->close();
 
     <script src="assets/js/main.js"></script>
     <script>
-        // Ensure functions are available globally
-        window.openModal = function(action, data = null) {
-            const modal = document.getElementById('modal');
-            if (!modal) {
-                console.error('Modal element not found');
-                return;
-            }
-            const form = document.getElementById('tableForm');
-            if (!form) {
-                console.error('Form element not found');
-                return;
-            }
-            
-            document.getElementById('formAction').value = action;
-            document.getElementById('modalTitle').textContent = action === 'create' ? 'Add New Table' : 'Edit Table';
-            
-            if (action === 'edit' && data) {
-                document.getElementById('formId').value = data.id;
-                document.getElementById('table_number').value = data.table_number || '';
-                document.getElementById('capacity').value = data.capacity || '';
-            } else {
-                form.reset();
-                document.getElementById('formId').value = '';
-            }
-            
-            modal.classList.remove('hidden');
-        };
-        
-        window.closeModal = function() {
-            const modal = document.getElementById('modal');
-            if (modal) {
-                modal.classList.add('hidden');
-            }
-        };
-        
-        window.deleteRecord = function(id) {
-            if (confirm('Are you sure you want to delete this table?')) {
-                document.getElementById('deleteId').value = id;
-                document.getElementById('deleteForm').submit();
-            }
-        };
-        
-        // Modal click outside to close
+        // Wait for DOM to be ready
         document.addEventListener('DOMContentLoaded', function() {
+            // Function to open modal
+            function openModal(action, data) {
+                const modal = document.getElementById('modal');
+                if (!modal) {
+                    console.error('Modal element not found');
+                    return;
+                }
+                
+                const form = document.getElementById('tableForm');
+                const formAction = document.getElementById('formAction');
+                const modalTitle = document.getElementById('modalTitle');
+                
+                if (!form || !formAction || !modalTitle) {
+                    console.error('Required form elements not found');
+                    return;
+                }
+                
+                formAction.value = action;
+                modalTitle.textContent = action === 'create' ? 'Add New Table' : 'Edit Table';
+                
+                if (action === 'edit' && data) {
+                    const formId = document.getElementById('formId');
+                    const tableNumber = document.getElementById('table_number');
+                    const capacity = document.getElementById('capacity');
+                    
+                    if (formId) formId.value = data.id || '';
+                    if (tableNumber) tableNumber.value = data.table_number || '';
+                    if (capacity) capacity.value = data.capacity || '';
+                } else {
+                    form.reset();
+                    const formId = document.getElementById('formId');
+                    if (formId) formId.value = '';
+                }
+                
+                modal.classList.remove('hidden');
+            }
+            
+            // Function to close modal
+            function closeModal() {
+                const modal = document.getElementById('modal');
+                if (modal) {
+                    modal.classList.add('hidden');
+                }
+            }
+            
+            // Function to delete record
+            function deleteRecord(id) {
+                if (confirm('Are you sure you want to delete this table?')) {
+                    const deleteId = document.getElementById('deleteId');
+                    const deleteForm = document.getElementById('deleteForm');
+                    if (deleteId && deleteForm) {
+                        deleteId.value = id;
+                        deleteForm.submit();
+                    }
+                }
+            }
+            
+            // Add event listeners
+            const addBtn = document.getElementById('addTableBtn');
+            if (addBtn) {
+                addBtn.addEventListener('click', function() {
+                    openModal('create');
+                });
+            }
+            
+            const closeBtn = document.getElementById('closeModalBtn');
+            const cancelBtn = document.getElementById('cancelBtn');
+            if (closeBtn) {
+                closeBtn.addEventListener('click', closeModal);
+            }
+            if (cancelBtn) {
+                cancelBtn.addEventListener('click', closeModal);
+            }
+            
+            // Edit buttons
+            const editButtons = document.querySelectorAll('.edit-btn');
+            editButtons.forEach(function(btn) {
+                btn.addEventListener('click', function() {
+                    const rowData = JSON.parse(this.getAttribute('data-row'));
+                    openModal('edit', rowData);
+                });
+            });
+            
+            // Delete buttons
+            const deleteButtons = document.querySelectorAll('.delete-btn');
+            deleteButtons.forEach(function(btn) {
+                btn.addEventListener('click', function() {
+                    const id = this.getAttribute('data-id');
+                    deleteRecord(id);
+                });
+            });
+            
+            // Modal click outside to close
             const modal = document.getElementById('modal');
             if (modal) {
                 modal.addEventListener('click', function(e) {
