@@ -1,4 +1,8 @@
 <?php
+// Enable error reporting for debugging
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
 session_start();
 require_once 'config/database.php';
 
@@ -9,76 +13,196 @@ if (!isset($_SESSION['admin_logged_in'])) {
 
 $conn = getDBConnection();
 $message = '';
+$messageType = 'success';
 
 // Handle CRUD operations
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     if (isset($_POST['action'])) {
         if ($_POST['action'] == 'create') {
             $order_number = 'ORD' . date('Ymd') . rand(1000, 9999);
-            $table_id = $_POST['table_id'] ?: null;
-            $booking_id = $_POST['booking_id'] ?: null;
-            $customer_name = $_POST['customer_name'];
-            $order_date = $_POST['order_date'];
-            $items = $_POST['items'];
-            $subtotal = $_POST['subtotal'];
-            $tax = $_POST['tax'] ?? 0;
-            $discount = $_POST['discount'] ?? 0;
-            $total_amount = $_POST['total_amount'];
-            $payment_status = $_POST['payment_status'];
-            $payment_method = $_POST['payment_method'] ?? '';
-            $notes = $_POST['notes'] ?? '';
+            $table_id = !empty($_POST['table_id']) ? intval($_POST['table_id']) : null;
+            $order_date = trim($_POST['order_date'] ?? '');
+            $order_status = trim($_POST['order_status'] ?? 'pending');
+            $payment_status = trim($_POST['payment_status'] ?? 'pending');
+            $payment_method = trim($_POST['payment_method'] ?? 'cash');
+            $notes = trim($_POST['notes'] ?? '');
             
-            $stmt = $conn->prepare("INSERT INTO order_details (order_number, table_id, booking_id, customer_name, order_date, items, subtotal, tax, discount, total_amount, payment_status, payment_method, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-            $stmt->bind_param("siisssddddsss", $order_number, $table_id, $booking_id, $customer_name, $order_date, $items, $subtotal, $tax, $discount, $total_amount, $payment_status, $payment_method, $notes);
-            if ($stmt->execute()) {
-                $message = "Order created successfully!";
-            } else {
-                $message = "Error: " . $conn->error;
+            // Process food items
+            $items = [];
+            $subtotal = 0;
+            
+            if (isset($_POST['food_items']) && is_array($_POST['food_items'])) {
+                foreach ($_POST['food_items'] as $food_id) {
+                    $qty = intval($_POST['qty_' . $food_id] ?? 0);
+                    if ($qty > 0) {
+                        // Get food details
+                        $foodStmt = $conn->prepare("SELECT food_name, price FROM menu WHERE id = ?");
+                        $foodStmt->bind_param("i", $food_id);
+                        $foodStmt->execute();
+                        $foodResult = $foodStmt->get_result();
+                        if ($foodRow = $foodResult->fetch_assoc()) {
+                            $itemTotal = $foodRow['price'] * $qty;
+                            $items[] = [
+                                'food_id' => $food_id,
+                                'food_name' => $foodRow['food_name'],
+                                'price' => $foodRow['price'],
+                                'qty' => $qty,
+                                'total' => $itemTotal
+                            ];
+                            $subtotal += $itemTotal;
+                        }
+                        $foodStmt->close();
+                    }
+                }
             }
-            $stmt->close();
+            
+            if (empty($order_date) || count($items) == 0) {
+                $message = "Please fill all required fields and select at least one food item!";
+                $messageType = 'error';
+            } else {
+                $itemsJson = json_encode($items);
+                $total_amount = $subtotal; // Can add tax/discount later if needed
+                
+                $stmt = $conn->prepare("INSERT INTO order_details (order_number, table_id, order_date, items, subtotal, total_amount, order_status, payment_status, payment_method, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                if ($stmt) {
+                    $stmt->bind_param("sissddssss", $order_number, $table_id, $order_date, $itemsJson, $subtotal, $total_amount, $order_status, $payment_status, $payment_method, $notes);
+                    if ($stmt->execute()) {
+                        $message = "Order created successfully!";
+                        $messageType = 'success';
+                        $stmt->close();
+                        $conn->close();
+                        header('Location: order_details.php?msg=' . urlencode($message) . '&type=' . $messageType);
+                        exit;
+                    } else {
+                        $message = "Error executing query: " . $stmt->error;
+                        $messageType = 'error';
+                    }
+                    $stmt->close();
+                } else {
+                    $message = "Error preparing statement: " . $conn->error;
+                    $messageType = 'error';
+                }
+            }
         } elseif ($_POST['action'] == 'update') {
-            $id = $_POST['id'];
-            $table_id = $_POST['table_id'] ?: null;
-            $booking_id = $_POST['booking_id'] ?: null;
-            $customer_name = $_POST['customer_name'];
-            $order_date = $_POST['order_date'];
-            $items = $_POST['items'];
-            $subtotal = $_POST['subtotal'];
-            $tax = $_POST['tax'] ?? 0;
-            $discount = $_POST['discount'] ?? 0;
-            $total_amount = $_POST['total_amount'];
-            $payment_status = $_POST['payment_status'];
-            $payment_method = $_POST['payment_method'] ?? '';
-            $notes = $_POST['notes'] ?? '';
+            $id = intval($_POST['id'] ?? 0);
+            $table_id = !empty($_POST['table_id']) ? intval($_POST['table_id']) : null;
+            $order_date = trim($_POST['order_date'] ?? '');
+            $order_status = trim($_POST['order_status'] ?? 'pending');
+            $payment_status = trim($_POST['payment_status'] ?? 'pending');
+            $payment_method = trim($_POST['payment_method'] ?? 'cash');
+            $notes = trim($_POST['notes'] ?? '');
             
-            $stmt = $conn->prepare("UPDATE order_details SET table_id=?, booking_id=?, customer_name=?, order_date=?, items=?, subtotal=?, tax=?, discount=?, total_amount=?, payment_status=?, payment_method=?, notes=? WHERE id=?");
-            $stmt->bind_param("iisssddddsssi", $table_id, $booking_id, $customer_name, $order_date, $items, $subtotal, $tax, $discount, $total_amount, $payment_status, $payment_method, $notes, $id);
-            if ($stmt->execute()) {
-                $message = "Order updated successfully!";
-            } else {
-                $message = "Error: " . $conn->error;
+            // Process food items
+            $items = [];
+            $subtotal = 0;
+            
+            if (isset($_POST['food_items']) && is_array($_POST['food_items'])) {
+                foreach ($_POST['food_items'] as $food_id) {
+                    $qty = intval($_POST['qty_' . $food_id] ?? 0);
+                    if ($qty > 0) {
+                        // Get food details
+                        $foodStmt = $conn->prepare("SELECT food_name, price FROM menu WHERE id = ?");
+                        $foodStmt->bind_param("i", $food_id);
+                        $foodStmt->execute();
+                        $foodResult = $foodStmt->get_result();
+                        if ($foodRow = $foodResult->fetch_assoc()) {
+                            $itemTotal = $foodRow['price'] * $qty;
+                            $items[] = [
+                                'food_id' => $food_id,
+                                'food_name' => $foodRow['food_name'],
+                                'price' => $foodRow['price'],
+                                'qty' => $qty,
+                                'total' => $itemTotal
+                            ];
+                            $subtotal += $itemTotal;
+                        }
+                        $foodStmt->close();
+                    }
+                }
             }
-            $stmt->close();
+            
+            if (empty($order_date) || count($items) == 0 || $id <= 0) {
+                $message = "Please fill all required fields and select at least one food item!";
+                $messageType = 'error';
+            } else {
+                $itemsJson = json_encode($items);
+                $total_amount = $subtotal;
+                
+                $stmt = $conn->prepare("UPDATE order_details SET table_id=?, order_date=?, items=?, subtotal=?, total_amount=?, order_status=?, payment_status=?, payment_method=?, notes=? WHERE id=?");
+                if ($stmt) {
+                    $stmt->bind_param("issddssssi", $table_id, $order_date, $itemsJson, $subtotal, $total_amount, $order_status, $payment_status, $payment_method, $notes, $id);
+                    if ($stmt->execute()) {
+                        $message = "Order updated successfully!";
+                        $messageType = 'success';
+                        $stmt->close();
+                        $conn->close();
+                        header('Location: order_details.php?msg=' . urlencode($message) . '&type=' . $messageType);
+                        exit;
+                    } else {
+                        $message = "Error executing update: " . $stmt->error;
+                        $messageType = 'error';
+                    }
+                    $stmt->close();
+                } else {
+                    $message = "Error preparing update statement: " . $conn->error;
+                    $messageType = 'error';
+                }
+            }
         } elseif ($_POST['action'] == 'delete') {
-            $id = $_POST['id'];
-            $stmt = $conn->prepare("DELETE FROM order_details WHERE id=?");
-            $stmt->bind_param("i", $id);
-            if ($stmt->execute()) {
-                $message = "Order deleted successfully!";
-            } else {
-                $message = "Error: " . $conn->error;
+            $id = intval($_POST['id'] ?? 0);
+            if ($id > 0) {
+                $stmt = $conn->prepare("DELETE FROM order_details WHERE id=?");
+                if ($stmt) {
+                    $stmt->bind_param("i", $id);
+                    if ($stmt->execute()) {
+                        $message = "Order deleted successfully!";
+                        $messageType = 'success';
+                        $stmt->close();
+                        $conn->close();
+                        header('Location: order_details.php?msg=' . urlencode($message) . '&type=' . $messageType);
+                        exit;
+                    } else {
+                        $message = "Error deleting: " . $stmt->error;
+                        $messageType = 'error';
+                    }
+                    $stmt->close();
+                } else {
+                    $message = "Error preparing delete statement: " . $conn->error;
+                    $messageType = 'error';
+                }
             }
-            $stmt->close();
         }
     }
 }
 
-// Fetch all orders
-$orders = $conn->query("SELECT o.*, t.table_number, b.booking_reference FROM order_details o LEFT JOIN tables t ON o.table_id = t.id LEFT JOIN bookings b ON o.booking_id = b.id ORDER BY o.order_date DESC");
+// Get message from URL if redirected
+if (isset($_GET['msg'])) {
+    $message = urldecode($_GET['msg']);
+    $messageType = $_GET['type'] ?? 'success';
+}
 
-// Fetch tables and bookings for dropdowns
+// Fetch all orders with table information
+$orders = $conn->query("
+    SELECT o.*, t.table_number 
+    FROM order_details o 
+    LEFT JOIN tables t ON o.table_id = t.id 
+    ORDER BY o.order_date DESC
+");
+if (!$orders) {
+    die("Error fetching orders: " . $conn->error);
+}
+
+// Fetch tables for dropdown
 $tables = $conn->query("SELECT id, table_number FROM tables ORDER BY table_number");
-$bookings = $conn->query("SELECT id, booking_reference FROM bookings ORDER BY booking_reference");
+if (!$tables) {
+    die("Error fetching tables: " . $conn->error);
+}
+
+// Fetch menu items for dropdown
+$menuItems = $conn->query("SELECT id, food_name, price FROM menu WHERE status = 'available' ORDER BY food_name");
+if (!$menuItems) {
+    die("Error fetching menu items: " . $conn->error);
+}
 $conn->close();
 ?>
 <!DOCTYPE html>
@@ -87,78 +211,267 @@ $conn->close();
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Order Details - Admin Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="assets/css/style.css">
+    <script>
+        var openModal, closeModal, deleteRecord, calculateTotal, addFoodItem, removeFoodItem;
+        var selectedFoods = [];
+        var menuData = {};
+        
+        (function() {
+            // Load menu data
+            <?php
+            $menuItems->data_seek(0);
+            while ($menu = $menuItems->fetch_assoc()): ?>
+                menuData[<?php echo $menu['id']; ?>] = {
+                    id: <?php echo $menu['id']; ?>,
+                    name: <?php echo json_encode($menu['food_name']); ?>,
+                    price: <?php echo $menu['price']; ?>
+                };
+            <?php endwhile; ?>
+            
+            openModal = function(action, data) {
+                var modal = document.getElementById('modal');
+                var form = document.getElementById('orderForm');
+                
+                if (!modal || !form) {
+                    console.error('Modal or form not found');
+                    return;
+                }
+                
+                // Set form action: 'create' for new, 'update' for edit
+                var formAction = action === 'edit' ? 'update' : 'create';
+                document.getElementById('formAction').value = formAction;
+                document.getElementById('modalTitle').textContent = action === 'create' ? 'Add New Order' : 'Edit Order';
+                
+                // Clear food items container
+                var foodItemsContainer = document.getElementById('foodItemsContainer');
+                foodItemsContainer.innerHTML = '';
+                selectedFoods = [];
+                
+                if (action === 'edit' && data) {
+                    document.getElementById('formId').value = data.id || '';
+                    document.getElementById('table_id').value = data.table_id || '';
+                    
+                    // Format datetime for input
+                    var orderDate = data.order_date ? new Date(data.order_date.replace(' ', 'T')).toISOString().slice(0, 16) : '';
+                    document.getElementById('order_date').value = orderDate;
+                    
+                    document.getElementById('order_status').value = data.order_status || 'pending';
+                    document.getElementById('payment_status').value = data.payment_status || 'pending';
+                    document.getElementById('payment_method').value = data.payment_method || 'cash';
+                    document.getElementById('notes').value = data.notes || '';
+                    
+                    // Load existing items
+                    if (data.items) {
+                        try {
+                            var items = typeof data.items === 'string' ? JSON.parse(data.items) : data.items;
+                            items.forEach(function(item, index) {
+                                var foodId = item.food_id || item.id;
+                                var qty = item.qty || 1;
+                                var uniqueId = foodId + '_' + index + '_' + Date.now();
+                                addFoodItem(foodId, qty, uniqueId);
+                            });
+                        } catch(e) {
+                            console.error('Error parsing items:', e);
+                        }
+                    }
+                } else {
+                    form.reset();
+                    document.getElementById('formId').value = '';
+                    var now = new Date();
+                    document.getElementById('order_date').value = now.toISOString().slice(0, 16);
+                }
+                
+                calculateTotal();
+                modal.classList.remove('hidden');
+            };
+            
+            closeModal = function() {
+                var modal = document.getElementById('modal');
+                if (modal) {
+                    modal.classList.add('hidden');
+                }
+            };
+            
+            deleteRecord = function(id) {
+                if (confirm('Are you sure you want to delete this order?')) {
+                    document.getElementById('deleteId').value = id;
+                    document.getElementById('deleteForm').submit();
+                }
+            };
+            
+            addFoodItem = function(foodId, qty, existingFoodId) {
+                if (!menuData[foodId]) return;
+                
+                var food = menuData[foodId];
+                var foodIdToUse = existingFoodId || foodId;
+                
+                if (selectedFoods.indexOf(foodIdToUse) !== -1) return;
+                
+                selectedFoods.push(foodIdToUse);
+                
+                var container = document.getElementById('foodItemsContainer');
+                var itemDiv = document.createElement('div');
+                itemDiv.className = 'food-item flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200';
+                itemDiv.id = 'foodItem_' + foodIdToUse;
+                itemDiv.innerHTML = `
+                    <input type="hidden" name="food_items[]" value="${foodId}">
+                    <div class="flex-1">
+                        <div class="font-medium text-gray-900">${food.name}</div>
+                        <div class="text-sm text-gray-600">Price: $${food.price.toFixed(2)}</div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <label class="text-sm text-gray-700">Qty:</label>
+                        <input type="number" name="qty_${foodId}" value="${qty || 1}" min="1" class="w-20 px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none" onchange="calculateTotal()" required>
+                    </div>
+                    <button type="button" onclick="removeFoodItem(${foodIdToUse})" class="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition-colors text-sm">
+                        Remove
+                    </button>
+                `;
+                container.appendChild(itemDiv);
+                calculateTotal();
+            };
+            
+            removeFoodItem = function(foodId) {
+                var itemDiv = document.getElementById('foodItem_' + foodId);
+                if (itemDiv) {
+                    itemDiv.remove();
+                    selectedFoods = selectedFoods.filter(id => id !== foodId);
+                    calculateTotal();
+                }
+            };
+            
+            calculateTotal = function() {
+                var subtotal = 0;
+                var foodItems = document.querySelectorAll('.food-item');
+                
+                foodItems.forEach(function(item) {
+                    var qtyInput = item.querySelector('input[type="number"]');
+                    var foodId = qtyInput.name.replace('qty_', '');
+                    var qty = parseInt(qtyInput.value) || 0;
+                    
+                    if (menuData[foodId]) {
+                        subtotal += menuData[foodId].price * qty;
+                    }
+                });
+                
+                document.getElementById('subtotal').value = subtotal.toFixed(2);
+                document.getElementById('total_amount').value = subtotal.toFixed(2);
+            };
+        })();
+    </script>
 </head>
-<body>
-    <div class="dashboard-container">
+<body class="bg-gray-50">
+    <div class="min-h-screen">
         <?php include 'includes/nav.php'; ?>
 
-        <main class="dashboard-main">
-            <div class="page-header">
-                <h2>Order Details Management</h2>
-                <button class="btn btn-primary" onclick="openModal('create')">Add New Order</button>
+        <main class="md:ml-64 p-4 md:p-6 lg:p-8">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+                <h2 class="text-2xl md:text-3xl font-bold text-gray-900">Order Details Management</h2>
+                <button onclick="openModal('create')" class="px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-all shadow-md hover:shadow-lg transform hover:scale-105">
+                    + Add New Order
+                </button>
             </div>
 
             <?php if ($message): ?>
-                <div class="message"><?php echo htmlspecialchars($message); ?></div>
+                <div class="mb-6 p-4 <?php echo $messageType === 'success' ? 'bg-green-50 border-l-4 border-green-500 text-green-700' : 'bg-red-50 border-l-4 border-red-500 text-red-700'; ?> rounded-lg animate-slide-up">
+                    <?php echo htmlspecialchars($message); ?>
+                    <button onclick="this.parentElement.remove()" class="float-right text-gray-500 hover:text-gray-700">×</button>
+                </div>
             <?php endif; ?>
 
-            <div class="table-container">
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>Order Number</th>
-                            <th>Customer</th>
-                            <th>Table</th>
-                            <th>Booking</th>
-                            <th>Order Date</th>
-                            <th>Total Amount</th>
-                            <th>Payment Status</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php while ($row = $orders->fetch_assoc()): ?>
-                        <tr>
-                            <td><?php echo $row['id']; ?></td>
-                            <td><?php echo htmlspecialchars($row['order_number']); ?></td>
-                            <td><?php echo htmlspecialchars($row['customer_name']); ?></td>
-                            <td><?php echo $row['table_number'] ?? 'N/A'; ?></td>
-                            <td><?php echo $row['booking_reference'] ?? 'N/A'; ?></td>
-                            <td><?php echo date('M d, Y H:i', strtotime($row['order_date'])); ?></td>
-                            <td>$<?php echo number_format($row['total_amount'], 2); ?></td>
-                            <td><span class="status-badge status-<?php echo $row['payment_status']; ?>"><?php echo ucfirst($row['payment_status']); ?></span></td>
-                            <td>
-                                <button class="btn btn-sm btn-edit" onclick="openModal('edit', <?php echo htmlspecialchars(json_encode($row)); ?>)">Edit</button>
-                                <button class="btn btn-sm btn-delete" onclick="deleteRecord(<?php echo $row['id']; ?>)">Delete</button>
-                            </td>
-                        </tr>
-                        <?php endwhile; ?>
-                    </tbody>
-                </table>
+            <div class="bg-white rounded-xl shadow-md overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gradient-to-r from-indigo-600 to-purple-600 text-white">
+                            <tr>
+                                <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">ID</th>
+                                <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Order Number</th>
+                                <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Table</th>
+                                <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Order Date</th>
+                                <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Total</th>
+                                <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Order Status</th>
+                                <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Payment</th>
+                                <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            <?php while ($row = $orders->fetch_assoc()): ?>
+                            <tr class="hover:bg-indigo-50 transition-colors">
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo $row['id']; ?></td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900"><?php echo htmlspecialchars($row['order_number']); ?></td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600"><?php echo htmlspecialchars($row['table_number'] ?? 'N/A'); ?></td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                                    <?php echo $row['order_date'] ? date('M d, Y H:i', strtotime($row['order_date'])) : 'N/A'; ?>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">
+                                    $<?php echo number_format($row['total_amount'], 2); ?>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <?php
+                                    $orderStatusClass = [
+                                        'pending' => 'bg-yellow-100 text-yellow-800',
+                                        'completed' => 'bg-green-100 text-green-800'
+                                    ];
+                                    $orderStatus = $row['order_status'] ?? 'pending';
+                                    $orderClass = $orderStatusClass[$orderStatus] ?? 'bg-gray-100 text-gray-800';
+                                    ?>
+                                    <span class="px-3 py-1 rounded-full text-xs font-semibold capitalize <?php echo $orderClass; ?>">
+                                        <?php echo $orderStatus; ?>
+                                    </span>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <?php
+                                    $paymentStatusClass = [
+                                        'pending' => 'bg-yellow-100 text-yellow-800',
+                                        'paid' => 'bg-green-100 text-green-800',
+                                        'cancelled' => 'bg-red-100 text-red-800'
+                                    ];
+                                    $paymentStatus = $row['payment_status'];
+                                    $paymentClass = $paymentStatusClass[$paymentStatus] ?? 'bg-gray-100 text-gray-800';
+                                    ?>
+                                    <div class="flex flex-col gap-1">
+                                        <span class="px-3 py-1 rounded-full text-xs font-semibold capitalize <?php echo $paymentClass; ?>">
+                                            <?php echo $paymentStatus; ?>
+                                        </span>
+                                        <span class="text-xs text-gray-600 capitalize">
+                                            <?php echo $row['payment_method'] ?? 'N/A'; ?>
+                                        </span>
+                                    </div>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
+                                    <button onclick="openModal('edit', <?php echo htmlspecialchars(json_encode($row)); ?>)" class="px-3 py-1 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors text-xs">
+                                        Edit
+                                    </button>
+                                    <button onclick="deleteRecord(<?php echo $row['id']; ?>)" class="px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors text-xs">
+                                        Delete
+                                    </button>
+                                </td>
+                            </tr>
+                            <?php endwhile; ?>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </main>
     </div>
 
     <!-- Modal -->
-    <div id="modal" class="modal">
-        <div class="modal-content">
-            <span class="close" onclick="closeModal()">&times;</span>
-            <h3 id="modalTitle">Add New Order</h3>
-            <form method="POST" id="orderForm">
+    <div id="modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-4xl w-full p-6 md:p-8 animate-slide-up max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-6">
+                <h3 id="modalTitle" class="text-2xl font-bold text-gray-900">Add New Order</h3>
+                <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+            </div>
+            <form method="POST" id="orderForm" class="space-y-4">
                 <input type="hidden" name="action" id="formAction" value="create">
                 <input type="hidden" name="id" id="formId">
                 
-                <div class="form-group">
-                    <label for="customer_name">Customer Name *</label>
-                    <input type="text" id="customer_name" name="customer_name" required>
-                </div>
-                
-                <div class="form-group">
-                    <label for="table_id">Table (Optional)</label>
-                    <select id="table_id" name="table_id">
-                        <option value="">None</option>
+                <div>
+                    <label for="table_id" class="block text-sm font-semibold text-gray-700 mb-2">Table Number</label>
+                    <select id="table_id" name="table_id" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
+                        <option value="">Select Table (Optional)</option>
                         <?php
                         $tables->data_seek(0);
                         while ($table = $tables->fetch_assoc()): ?>
@@ -167,70 +480,85 @@ $conn->close();
                     </select>
                 </div>
                 
-                <div class="form-group">
-                    <label for="booking_id">Booking (Optional)</label>
-                    <select id="booking_id" name="booking_id">
-                        <option value="">None</option>
-                        <?php
-                        $bookings->data_seek(0);
-                        while ($booking = $bookings->fetch_assoc()): ?>
-                            <option value="<?php echo $booking['id']; ?>"><?php echo htmlspecialchars($booking['booking_reference']); ?></option>
-                        <?php endwhile; ?>
-                    </select>
+                <div>
+                    <label for="order_date" class="block text-sm font-semibold text-gray-700 mb-2">Order Date & Time *</label>
+                    <input type="datetime-local" id="order_date" name="order_date" required class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
                 </div>
                 
-                <div class="form-group">
-                    <label for="order_date">Order Date *</label>
-                    <input type="datetime-local" id="order_date" name="order_date" required>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Select Food Items *</label>
+                    <div class="flex gap-2 mb-3">
+                        <select id="foodSelect" class="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
+                            <option value="">Select a food item</option>
+                            <?php
+                            $menuItems->data_seek(0);
+                            while ($menu = $menuItems->fetch_assoc()): ?>
+                                <option value="<?php echo $menu['id']; ?>" data-price="<?php echo $menu['price']; ?>">
+                                    <?php echo htmlspecialchars($menu['food_name']); ?> - $<?php echo number_format($menu['price'], 2); ?>
+                                </option>
+                            <?php endwhile; ?>
+                        </select>
+                        <button type="button" onclick="if(document.getElementById('foodSelect').value) addFoodItem(document.getElementById('foodSelect').value); document.getElementById('foodSelect').value = '';" class="px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-all">
+                            Add Food
+                        </button>
+                    </div>
+                    <div id="foodItemsContainer" class="space-y-2 min-h-[100px] p-3 border border-gray-200 rounded-lg bg-gray-50">
+                        <p class="text-sm text-gray-500 text-center py-4">No food items selected. Click "Add Food" to add items.</p>
+                    </div>
                 </div>
                 
-                <div class="form-group">
-                    <label for="items">Items *</label>
-                    <textarea id="items" name="items" rows="4" required placeholder="e.g., Pizza x2, Pasta x1, Drinks x3"></textarea>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="subtotal" class="block text-sm font-semibold text-gray-700 mb-2">Subtotal</label>
+                        <input type="number" id="subtotal" name="subtotal" step="0.01" readonly class="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-100 outline-none" value="0.00">
+                    </div>
+                    
+                    <div>
+                        <label for="total_amount" class="block text-sm font-semibold text-gray-700 mb-2">Total Amount</label>
+                        <input type="number" id="total_amount" name="total_amount" step="0.01" readonly class="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-100 outline-none" value="0.00">
+                    </div>
                 </div>
                 
-                <div class="form-group">
-                    <label for="subtotal">Subtotal *</label>
-                    <input type="number" id="subtotal" name="subtotal" step="0.01" min="0" required onchange="calculateTotal()">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label for="order_status" class="block text-sm font-semibold text-gray-700 mb-2">Order Status *</label>
+                        <select id="order_status" name="order_status" required class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
+                            <option value="pending">Pending</option>
+                            <option value="completed">Completed</option>
+                        </select>
+                    </div>
+                    
+                    <div>
+                        <label for="payment_status" class="block text-sm font-semibold text-gray-700 mb-2">Payment Status *</label>
+                        <select id="payment_status" name="payment_status" required class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
+                            <option value="pending">Pending</option>
+                            <option value="paid">Paid</option>
+                            <option value="cancelled">Cancelled</option>
+                        </select>
+                    </div>
+                    
+                    <div>
+                        <label for="payment_method" class="block text-sm font-semibold text-gray-700 mb-2">Payment Method *</label>
+                        <select id="payment_method" name="payment_method" required class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
+                            <option value="cash">Cash</option>
+                            <option value="card">Card</option>
+                            <option value="online">Online</option>
+                        </select>
+                    </div>
                 </div>
                 
-                <div class="form-group">
-                    <label for="tax">Tax</label>
-                    <input type="number" id="tax" name="tax" step="0.01" min="0" value="0" onchange="calculateTotal()">
+                <div>
+                    <label for="notes" class="block text-sm font-semibold text-gray-700 mb-2">Notes</label>
+                    <textarea id="notes" name="notes" rows="3" placeholder="Additional notes or special instructions..." class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"></textarea>
                 </div>
                 
-                <div class="form-group">
-                    <label for="discount">Discount</label>
-                    <input type="number" id="discount" name="discount" step="0.01" min="0" value="0" onchange="calculateTotal()">
-                </div>
-                
-                <div class="form-group">
-                    <label for="total_amount">Total Amount *</label>
-                    <input type="number" id="total_amount" name="total_amount" step="0.01" min="0" required readonly>
-                </div>
-                
-                <div class="form-group">
-                    <label for="payment_status">Payment Status *</label>
-                    <select id="payment_status" name="payment_status" required>
-                        <option value="pending">Pending</option>
-                        <option value="paid">Paid</option>
-                        <option value="cancelled">Cancelled</option>
-                    </select>
-                </div>
-                
-                <div class="form-group">
-                    <label for="payment_method">Payment Method</label>
-                    <input type="text" id="payment_method" name="payment_method" placeholder="e.g., Cash, Card, Online">
-                </div>
-                
-                <div class="form-group">
-                    <label for="notes">Notes</label>
-                    <textarea id="notes" name="notes" rows="3"></textarea>
-                </div>
-                
-                <div class="form-actions">
-                    <button type="submit" class="btn btn-primary">Save</button>
-                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                <div class="flex gap-3 pt-4">
+                    <button type="submit" class="flex-1 px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-all">
+                        Save
+                    </button>
+                    <button type="button" onclick="closeModal()" class="flex-1 px-6 py-3 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300 transition-all">
+                        Cancel
+                    </button>
                 </div>
             </form>
         </div>
@@ -244,64 +572,17 @@ $conn->close();
 
     <script src="assets/js/main.js"></script>
     <script>
-        function calculateTotal() {
-            const subtotal = parseFloat(document.getElementById('subtotal').value) || 0;
-            const tax = parseFloat(document.getElementById('tax').value) || 0;
-            const discount = parseFloat(document.getElementById('discount').value) || 0;
-            const total = subtotal + tax - discount;
-            document.getElementById('total_amount').value = total.toFixed(2);
-        }
-        
-        function openModal(action, data = null) {
-            const modal = document.getElementById('modal');
-            const form = document.getElementById('orderForm');
-            document.getElementById('formAction').value = action;
-            document.getElementById('modalTitle').textContent = action === 'create' ? 'Add New Order' : 'Edit Order';
-            
-            if (action === 'edit' && data) {
-                document.getElementById('formId').value = data.id;
-                document.getElementById('customer_name').value = data.customer_name;
-                document.getElementById('table_id').value = data.table_id || '';
-                document.getElementById('booking_id').value = data.booking_id || '';
-                const orderDate = new Date(data.order_date);
-                document.getElementById('order_date').value = orderDate.toISOString().slice(0, 16);
-                document.getElementById('items').value = data.items || '';
-                document.getElementById('subtotal').value = data.subtotal;
-                document.getElementById('tax').value = data.tax || 0;
-                document.getElementById('discount').value = data.discount || 0;
-                document.getElementById('total_amount').value = data.total_amount;
-                document.getElementById('payment_status').value = data.payment_status;
-                document.getElementById('payment_method').value = data.payment_method || '';
-                document.getElementById('notes').value = data.notes || '';
-            } else {
-                form.reset();
-                document.getElementById('formId').value = '';
-                const now = new Date();
-                document.getElementById('order_date').value = now.toISOString().slice(0, 16);
-                calculateTotal();
+        // Modal click outside to close
+        document.addEventListener('DOMContentLoaded', function() {
+            var modal = document.getElementById('modal');
+            if (modal) {
+                modal.addEventListener('click', function(e) {
+                    if (e.target === this) {
+                        closeModal();
+                    }
+                });
             }
-            
-            modal.style.display = 'block';
-        }
-        
-        function closeModal() {
-            document.getElementById('modal').style.display = 'none';
-        }
-        
-        function deleteRecord(id) {
-            if (confirm('Are you sure you want to delete this order?')) {
-                document.getElementById('deleteId').value = id;
-                document.getElementById('deleteForm').submit();
-            }
-        }
-        
-        window.onclick = function(event) {
-            const modal = document.getElementById('modal');
-            if (event.target == modal) {
-                closeModal();
-            }
-        }
+        });
     </script>
 </body>
 </html>
-

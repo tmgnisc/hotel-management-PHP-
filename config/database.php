@@ -102,7 +102,7 @@ function initializeDatabase() {
             order_number VARCHAR(100) NOT NULL UNIQUE,
             table_id INT,
             booking_id INT,
-            customer_name VARCHAR(255) NOT NULL,
+            customer_name VARCHAR(255),
             order_date DATETIME NOT NULL,
             items TEXT NOT NULL,
             subtotal DECIMAL(10, 2) NOT NULL,
@@ -232,6 +232,28 @@ function initializeDatabase() {
             if ($checkColumn && $row = $checkColumn->fetch_assoc()) {
                 if (strpos($row['Type'], 'enum') === false) {
                     $alterSql = "ALTER TABLE order_details MODIFY COLUMN payment_method ENUM('cash', 'card', 'online') DEFAULT 'cash'";
+                    $conn->query($alterSql);
+                }
+            }
+        }
+        
+        // Make customer_name nullable if it's not already
+        if (in_array('customer_name', $existingOrderDetailsColumns)) {
+            $checkColumn = $conn->query("SHOW COLUMNS FROM order_details WHERE Field = 'customer_name'");
+            if ($checkColumn && $row = $checkColumn->fetch_assoc()) {
+                if ($row['Null'] === 'NO') {
+                    $alterSql = "ALTER TABLE order_details MODIFY COLUMN customer_name VARCHAR(255) NULL";
+                    $conn->query($alterSql);
+                }
+            }
+        }
+        
+        // Ensure payment_status has 'pending' as default
+        if (in_array('payment_status', $existingOrderDetailsColumns)) {
+            $checkColumn = $conn->query("SHOW COLUMNS FROM order_details WHERE Field = 'payment_status'");
+            if ($checkColumn && $row = $checkColumn->fetch_assoc()) {
+                if ($row['Default'] !== 'pending') {
+                    $alterSql = "ALTER TABLE order_details MODIFY COLUMN payment_status ENUM('pending', 'paid', 'cancelled') DEFAULT 'pending'";
                     $conn->query($alterSql);
                 }
             }
