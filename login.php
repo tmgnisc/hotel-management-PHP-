@@ -46,18 +46,29 @@ if (isset($_SESSION['admin_logged_in'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - Hotel Management System</title>
+    <title>Login - हाम्रो थकाली भान्छा घर</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="assets/css/style.css">
+    <style>
+        .devanagari-font {
+            font-family: 'Noto Sans Devanagari', sans-serif;
+        }
+    </style>
 </head>
 <body class="min-h-screen bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-500 flex items-center justify-center p-4">
     <div class="w-full max-w-md relative z-10 animate-slide-up">
         <div class="bg-white rounded-2xl shadow-2xl p-8 md:p-10 border border-gray-100">
             <div class="text-center mb-8">
-                <h1 class="text-3xl md:text-4xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent mb-2">
-                    Hotel Management System
+                <h1 class="text-3xl md:text-4xl font-bold text-indigo-600 mb-3 devanagari-font">
+                    हाम्रो थकाली भान्छा घर
                 </h1>
-                <h2 class="text-lg text-gray-600 font-medium">Admin Login</h2>
+                <h2 class="text-xl md:text-2xl font-semibold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent mb-2">
+                    Hotel Management System
+                </h2>
+                <p class="text-sm text-gray-500">Admin Login</p>
             </div>
             
             <?php if (isset($error)): ?>

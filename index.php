@@ -13,9 +13,17 @@ if (!isset($_SESSION['admin_logged_in'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hotel Management System - Admin Dashboard</title>
+    <title>हाम्रो थकाली भान्छा घर - Admin Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="assets/css/style.css">
+    <style>
+        .devanagari-font {
+            font-family: 'Noto Sans Devanagari', sans-serif;
+        }
+    </style>
 </head>
 <body class="bg-gray-50">
     <div class="min-h-screen">
@@ -119,11 +127,14 @@ if (!isset($_SESSION['admin_logged_in'])) {
             </div>
 
             <!-- Welcome Card -->
-            <div class="bg-white rounded-xl shadow-md p-6 md:p-8">
-                <h2 class="text-2xl md:text-3xl font-bold text-gray-900 mb-3">Welcome to Admin Dashboard</h2>
+            <div class="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl shadow-md p-6 md:p-8 border-l-4 border-indigo-600">
+                <h2 class="text-3xl md:text-4xl font-bold text-indigo-600 mb-2 devanagari-font">
+                    हाम्रो थकाली भान्छा घर
+                </h2>
+                <h3 class="text-xl md:text-2xl font-semibold text-gray-800 mb-4">Welcome to Admin Dashboard</h3>
                 <p class="text-gray-600 leading-relaxed">
                     Manage your hotel operations efficiently using the navigation menu. You can manage restaurant tables, 
-                    normal rooms, bookings, and order details all from this centralized dashboard.
+                    normal rooms, bookings, menu items, and order details all from this centralized dashboard.
                 </p>
             </div>
         </main>

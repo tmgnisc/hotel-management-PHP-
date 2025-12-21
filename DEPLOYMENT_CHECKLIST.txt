@@ -1,0 +1,71 @@
+===========================================
+HOTEL MANAGEMENT SYSTEM - DEPLOYMENT CHECKLIST
+===========================================
+
+BEFORE CREATING ZIP:
+-------------------
+[ ] Update config/database.php with production credentials
+[ ] Remove or comment out error_reporting() and display_errors
+[ ] Test all functionality locally
+[ ] Remove temporary/migration files (migrate_tables.php, fix_capacity_column.php)
+
+FILES TO INCLUDE IN ZIP:
+------------------------
+[ ] All .php files (except migration scripts)
+[ ] assets/css/style.css
+[ ] assets/js/main.js
+[ ] includes/nav.php
+[ ] config/database.php (with production credentials)
+[ ] .htaccess file
+
+FILES TO EXCLUDE:
+-----------------
+[ ] migrate_tables.php
+[ ] fix_capacity_column.php
+[ ] DEPLOYMENT_GUIDE.md
+[ ] DEPLOYMENT_CHECKLIST.txt
+[ ] config/database.production.example.php
+[ ] Any .git folders
+[ ] Any backup files
+
+ON CPANEL:
+----------
+[ ] Upload ZIP file to public_html
+[ ] Extract ZIP file
+[ ] Delete ZIP file after extraction
+[ ] Create MySQL database in cPanel
+[ ] Create MySQL database user
+[ ] Grant ALL PRIVILEGES to user
+[ ] Update config/database.php with cPanel database credentials
+[ ] Set file permissions (folders: 755, files: 644)
+[ ] Test website access
+
+AFTER DEPLOYMENT:
+-----------------
+[ ] Test login functionality
+[ ] Test all CRUD operations
+[ ] Verify database tables are created
+[ ] Check CSS/JS files load correctly
+[ ] Change default admin password
+[ ] Enable HTTPS/SSL if available
+[ ] Set up regular backups
+
+TROUBLESHOOTING:
+----------------
+If white page appears:
+- Check PHP error logs in cPanel
+- Verify file permissions
+- Check database credentials
+
+If database error:
+- Verify database name, user, password
+- Check database user has proper permissions
+- Ensure database exists
+
+If CSS/JS not loading:
+- Check file paths
+- Verify file permissions
+- Clear browser cache
+
+===========================================
+

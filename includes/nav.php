@@ -2,12 +2,21 @@
 // Get current page name for active link
 $current_page = basename($_SERVER['PHP_SELF']);
 ?>
+<style>
+    .devanagari-font {
+        font-family: 'Noto Sans Devanagari', sans-serif;
+    }
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;500;600;700&display=swap" rel="stylesheet">
 <!-- Sidebar for Desktop -->
 <aside id="sidebar" class="hidden md:flex fixed left-0 top-0 h-screen w-64 bg-gray-900 text-white flex-col z-50 shadow-2xl">
     <div class="p-6 border-b border-gray-800">
-        <h2 class="text-xl font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
-            Hotel Admin
+        <h2 class="text-lg font-bold text-white mb-1 devanagari-font">
+            हाम्रो थकाली भान्छा घर
         </h2>
+        <p class="text-xs text-gray-400">Hotel Management</p>
     </div>
     <nav class="flex-1 p-4 space-y-2 overflow-y-auto">
         <a href="index.php" class="flex items-center px-4 py-3 rounded-lg transition-all duration-200 <?php echo ($current_page == 'index.php') ? 'bg-indigo-600 text-white shadow-lg' : 'text-gray-300 hover:bg-gray-800 hover:text-white'; ?>">
@@ -46,7 +55,9 @@ $current_page = basename($_SERVER['PHP_SELF']);
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
                 </svg>
             </button>
-            <h1 class="ml-2 md:ml-0 text-xl font-bold text-gray-900">Hotel Management System</h1>
+            <h1 class="ml-2 md:ml-0 text-lg md:text-xl font-bold text-gray-900 devanagari-font">
+                हाम्रो थकाली भान्छा घर
+            </h1>
         </div>
         <div class="flex items-center gap-4">
             <span class="hidden sm:inline-block px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium">
