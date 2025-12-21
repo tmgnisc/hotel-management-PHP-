@@ -39,20 +39,21 @@ if (isset($_SESSION['admin_logged_in'])) {
             <?php if (isset($error)): ?>
                 <div class="error-message"><?php echo htmlspecialchars($error); ?></div>
             <?php endif; ?>
-            <form method="POST" action="login.php">
+            <form method="POST" action="login.php" id="loginForm">
                 <div class="form-group">
                     <label for="username">Username</label>
-                    <input type="text" id="username" name="username" required>
+                    <input type="text" id="username" name="username" required autocomplete="username" placeholder="Enter your username">
                 </div>
                 <div class="form-group">
                     <label for="password">Password</label>
-                    <input type="password" id="password" name="password" required>
+                    <input type="password" id="password" name="password" required autocomplete="current-password" placeholder="Enter your password">
                 </div>
-                <button type="submit" class="btn btn-primary">Login</button>
+                <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 2vw;">Login</button>
             </form>
             <p class="login-note">Default: admin / admin</p>
         </div>
     </div>
+    <script src="assets/js/main.js"></script>
 </body>
 </html>
 
