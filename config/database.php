@@ -114,6 +114,62 @@ function initializeDatabase() {
         }
     }
     
+    // Check and add missing columns to existing tables
+    $conn->select_db(DB_NAME);
+    
+    // Check if normal_rooms table exists and add missing columns
+    $checkTable = $conn->query("SHOW TABLES LIKE 'normal_rooms'");
+    if ($checkTable && $checkTable->num_rows > 0) {
+        // Get all existing columns
+        $columns = $conn->query("SHOW COLUMNS FROM normal_rooms");
+        $existingColumns = [];
+        while ($col = $columns->fetch_assoc()) {
+            $existingColumns[] = $col['Field'];
+        }
+        
+        // Remove capacity column if it exists (we use capacity_type instead)
+        if (in_array('capacity', $existingColumns) && !in_array('capacity_type', $existingColumns)) {
+            $alterSql = "ALTER TABLE normal_rooms DROP COLUMN capacity";
+            $conn->query($alterSql);
+        }
+        
+        // Check if capacity_type column exists
+        if (!in_array('capacity_type', $existingColumns)) {
+            $alterSql = "ALTER TABLE normal_rooms ADD COLUMN capacity_type ENUM('single bed', 'double bed', 'group') NOT NULL DEFAULT 'single bed' AFTER room_type";
+            $conn->query($alterSql);
+        }
+        
+        // Check if room_type column exists
+        if (!in_array('room_type', $existingColumns)) {
+            $alterSql = "ALTER TABLE normal_rooms ADD COLUMN room_type ENUM('deluxe', 'standard', 'normal') NOT NULL DEFAULT 'normal' AFTER room_number";
+            $conn->query($alterSql);
+        }
+        
+        // Check if status column exists
+        if (!in_array('status', $existingColumns)) {
+            $alterSql = "ALTER TABLE normal_rooms ADD COLUMN status ENUM('available', 'occupied', 'maintenance') DEFAULT 'available' AFTER capacity_type";
+            $conn->query($alterSql);
+        }
+        
+        // Check if amenities column exists
+        if (!in_array('amenities', $existingColumns)) {
+            $alterSql = "ALTER TABLE normal_rooms ADD COLUMN amenities TEXT AFTER status";
+            $conn->query($alterSql);
+        }
+        
+        // If capacity column still exists and we have capacity_type, remove capacity
+        if (in_array('capacity', $existingColumns) && in_array('capacity_type', $existingColumns)) {
+            $alterSql = "ALTER TABLE normal_rooms DROP COLUMN capacity";
+            $conn->query($alterSql);
+        }
+        
+        // Remove price_per_night column if it exists (not in current schema)
+        if (in_array('price_per_night', $existingColumns)) {
+            $alterSql = "ALTER TABLE normal_rooms DROP COLUMN price_per_night";
+            $conn->query($alterSql);
+        }
+    }
+    
     // Create default superadmin if not exists
     $conn->select_db(DB_NAME);
     $checkAdmin = $conn->query("SELECT COUNT(*) as count FROM superadmin");
