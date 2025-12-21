@@ -1,0 +1,615 @@
+/* Mobile-first CSS with viewport-based units */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    background-color: #f5f5f5;
+    color: #333;
+    line-height: 1.6;
+}
+
+/* Login Page */
+.login-page {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.login-container {
+    width: 100vw;
+    max-width: 90vw;
+    padding: 4vw;
+}
+
+.login-box {
+    background: white;
+    padding: 6vw;
+    border-radius: 2vw;
+    box-shadow: 0 1vw 3vw rgba(0, 0, 0, 0.1);
+    width: 100%;
+}
+
+.login-box h1 {
+    font-size: 6vw;
+    margin-bottom: 2vw;
+    color: #667eea;
+    text-align: center;
+}
+
+.login-box h2 {
+    font-size: 5vw;
+    margin-bottom: 4vw;
+    text-align: center;
+    color: #333;
+}
+
+.login-note {
+    text-align: center;
+    margin-top: 3vw;
+    font-size: 3.5vw;
+    color: #666;
+}
+
+/* Dashboard Container */
+.dashboard-container {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+/* Header */
+.dashboard-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 3vw 4vw;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.dashboard-header h1 {
+    font-size: 5vw;
+}
+
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 3vw;
+    margin-top: 2vw;
+}
+
+.admin-name {
+    font-size: 4vw;
+}
+
+.logout-btn {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    padding: 2vw 4vw;
+    text-decoration: none;
+    border-radius: 1vw;
+    font-size: 3.5vw;
+    transition: background 0.3s;
+}
+
+.logout-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+/* Navigation */
+.dashboard-nav {
+    background: #2c3e50;
+    padding: 2vw 0;
+}
+
+.mobile-menu-toggle {
+    display: block;
+    background: #34495e;
+    color: white;
+    border: none;
+    padding: 3vw 4vw;
+    font-size: 6vw;
+    cursor: pointer;
+    width: 100%;
+}
+
+.nav-menu {
+    list-style: none;
+    display: none;
+    flex-direction: column;
+}
+
+.nav-menu.active {
+    display: flex;
+}
+
+.nav-menu li {
+    border-bottom: 0.1vw solid #34495e;
+}
+
+.nav-menu a {
+    display: block;
+    color: white;
+    text-decoration: none;
+    padding: 3vw 4vw;
+    font-size: 4vw;
+    transition: background 0.3s;
+}
+
+.nav-menu a:hover,
+.nav-menu a.active {
+    background: #34495e;
+}
+
+/* Main Content */
+.dashboard-main {
+    flex: 1;
+    padding: 4vw;
+}
+
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4vw;
+    flex-wrap: wrap;
+    gap: 3vw;
+}
+
+.page-header h2 {
+    font-size: 5vw;
+    color: #333;
+}
+
+/* Buttons */
+.btn {
+    padding: 2.5vw 5vw;
+    border: none;
+    border-radius: 1vw;
+    cursor: pointer;
+    font-size: 3.5vw;
+    text-decoration: none;
+    display: inline-block;
+    transition: all 0.3s;
+}
+
+.btn-primary {
+    background: #667eea;
+    color: white;
+}
+
+.btn-primary:hover {
+    background: #5568d3;
+}
+
+.btn-secondary {
+    background: #95a5a6;
+    color: white;
+}
+
+.btn-secondary:hover {
+    background: #7f8c8d;
+}
+
+.btn-sm {
+    padding: 1.5vw 3vw;
+    font-size: 3vw;
+    margin: 0.5vw;
+}
+
+.btn-edit {
+    background: #3498db;
+    color: white;
+}
+
+.btn-edit:hover {
+    background: #2980b9;
+}
+
+.btn-delete {
+    background: #e74c3c;
+    color: white;
+}
+
+.btn-delete:hover {
+    background: #c0392b;
+}
+
+/* Stats Cards */
+.dashboard-stats {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 3vw;
+    margin-bottom: 4vw;
+}
+
+.stat-card {
+    background: white;
+    padding: 4vw;
+    border-radius: 2vw;
+    box-shadow: 0 0.5vw 1vw rgba(0, 0, 0, 0.1);
+    text-align: center;
+}
+
+.stat-card h3 {
+    font-size: 4vw;
+    color: #666;
+    margin-bottom: 2vw;
+}
+
+.stat-number {
+    font-size: 8vw;
+    font-weight: bold;
+    color: #667eea;
+}
+
+/* Table Container */
+.table-container {
+    overflow-x: auto;
+    background: white;
+    border-radius: 2vw;
+    box-shadow: 0 0.5vw 1vw rgba(0, 0, 0, 0.1);
+}
+
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 3.5vw;
+}
+
+.data-table thead {
+    background: #667eea;
+    color: white;
+}
+
+.data-table th,
+.data-table td {
+    padding: 2.5vw;
+    text-align: left;
+    border-bottom: 0.1vw solid #ddd;
+}
+
+.data-table tbody tr:hover {
+    background: #f8f9fa;
+}
+
+/* Status Badges */
+.status-badge {
+    padding: 1vw 2vw;
+    border-radius: 1vw;
+    font-size: 3vw;
+    font-weight: bold;
+    display: inline-block;
+}
+
+.status-available,
+.status-paid {
+    background: #2ecc71;
+    color: white;
+}
+
+.status-occupied,
+.status-confirmed,
+.status-checked_in {
+    background: #3498db;
+    color: white;
+}
+
+.status-reserved,
+.status-pending {
+    background: #f39c12;
+    color: white;
+}
+
+.status-maintenance,
+.status-cancelled {
+    background: #e74c3c;
+    color: white;
+}
+
+.status-checked_out {
+    background: #95a5a6;
+    color: white;
+}
+
+/* Message */
+.message {
+    background: #d4edda;
+    color: #155724;
+    padding: 3vw;
+    border-radius: 1vw;
+    margin-bottom: 4vw;
+    font-size: 3.5vw;
+    border: 0.1vw solid #c3e6cb;
+}
+
+.error-message {
+    background: #f8d7da;
+    color: #721c24;
+    padding: 3vw;
+    border-radius: 1vw;
+    margin-bottom: 4vw;
+    font-size: 3.5vw;
+    border: 0.1vw solid #f5c6cb;
+}
+
+/* Modal */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: rgba(0, 0, 0, 0.5);
+    overflow-y: auto;
+}
+
+.modal-content {
+    background-color: white;
+    margin: 5vw auto;
+    padding: 4vw;
+    border-radius: 2vw;
+    width: 90vw;
+    max-width: 90vw;
+    position: relative;
+    box-shadow: 0 2vw 4vw rgba(0, 0, 0, 0.2);
+}
+
+.close {
+    color: #aaa;
+    float: right;
+    font-size: 8vw;
+    font-weight: bold;
+    cursor: pointer;
+    position: absolute;
+    right: 3vw;
+    top: 2vw;
+}
+
+.close:hover {
+    color: #000;
+}
+
+.modal-content h3 {
+    font-size: 5vw;
+    margin-bottom: 4vw;
+    color: #333;
+}
+
+/* Forms */
+.form-group {
+    margin-bottom: 4vw;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 1.5vw;
+    font-size: 3.5vw;
+    font-weight: 500;
+    color: #333;
+}
+
+.form-group input,
+.form-group select,
+.form-group textarea {
+    width: 100%;
+    padding: 2.5vw;
+    border: 0.1vw solid #ddd;
+    border-radius: 1vw;
+    font-size: 3.5vw;
+    font-family: inherit;
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 0.3vw rgba(102, 126, 234, 0.1);
+}
+
+.form-actions {
+    display: flex;
+    gap: 2vw;
+    margin-top: 4vw;
+    flex-wrap: wrap;
+}
+
+.form-actions .btn {
+    flex: 1;
+    min-width: 20vw;
+}
+
+.dashboard-content {
+    background: white;
+    padding: 4vw;
+    border-radius: 2vw;
+    box-shadow: 0 0.5vw 1vw rgba(0, 0, 0, 0.1);
+}
+
+.dashboard-content h2 {
+    font-size: 5vw;
+    margin-bottom: 2vw;
+    color: #333;
+}
+
+.dashboard-content p {
+    font-size: 3.5vw;
+    color: #666;
+}
+
+/* Desktop Styles */
+@media (min-width: 768px) {
+    .login-box {
+        max-width: 40vw;
+        padding: 3vw;
+    }
+    
+    .login-box h1 {
+        font-size: 3vw;
+    }
+    
+    .login-box h2 {
+        font-size: 2.5vw;
+    }
+    
+    .login-note {
+        font-size: 1.5vw;
+    }
+    
+    .dashboard-header {
+        padding: 1.5vw 2vw;
+    }
+    
+    .dashboard-header h1 {
+        font-size: 2vw;
+    }
+    
+    .header-actions {
+        margin-top: 0;
+        gap: 1.5vw;
+    }
+    
+    .admin-name {
+        font-size: 1.2vw;
+    }
+    
+    .logout-btn {
+        padding: 0.8vw 1.5vw;
+        font-size: 1.2vw;
+    }
+    
+    .mobile-menu-toggle {
+        display: none;
+    }
+    
+    .nav-menu {
+        display: flex;
+        flex-direction: row;
+    }
+    
+    .nav-menu li {
+        border-bottom: none;
+    }
+    
+    .nav-menu a {
+        padding: 1.5vw 2vw;
+        font-size: 1.2vw;
+    }
+    
+    .dashboard-main {
+        padding: 2vw;
+    }
+    
+    .page-header h2 {
+        font-size: 2vw;
+    }
+    
+    .btn {
+        padding: 0.8vw 1.5vw;
+        font-size: 1.2vw;
+    }
+    
+    .btn-sm {
+        padding: 0.5vw 1vw;
+        font-size: 1vw;
+    }
+    
+    .dashboard-stats {
+        grid-template-columns: repeat(4, 1fr);
+        gap: 1.5vw;
+    }
+    
+    .stat-card {
+        padding: 2vw;
+    }
+    
+    .stat-card h3 {
+        font-size: 1.2vw;
+    }
+    
+    .stat-number {
+        font-size: 3vw;
+    }
+    
+    .data-table {
+        font-size: 1.2vw;
+    }
+    
+    .data-table th,
+    .data-table td {
+        padding: 1vw;
+    }
+    
+    .status-badge {
+        padding: 0.3vw 0.8vw;
+        font-size: 1vw;
+    }
+    
+    .message,
+    .error-message {
+        padding: 1.5vw;
+        font-size: 1.2vw;
+    }
+    
+    .modal-content {
+        margin: 2vw auto;
+        padding: 2vw;
+        width: 50vw;
+        max-width: 50vw;
+    }
+    
+    .close {
+        font-size: 2.5vw;
+        right: 1.5vw;
+        top: 1vw;
+    }
+    
+    .modal-content h3 {
+        font-size: 2vw;
+        margin-bottom: 2vw;
+    }
+    
+    .form-group {
+        margin-bottom: 2vw;
+    }
+    
+    .form-group label {
+        font-size: 1.2vw;
+        margin-bottom: 0.5vw;
+    }
+    
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+        padding: 0.8vw;
+        font-size: 1.2vw;
+    }
+    
+    .form-actions {
+        margin-top: 2vw;
+        gap: 1vw;
+    }
+    
+    .dashboard-content {
+        padding: 2vw;
+    }
+    
+    .dashboard-content h2 {
+        font-size: 2vw;
+    }
+    
+    .dashboard-content p {
+        font-size: 1.2vw;
+    }
+}
+
