@@ -290,6 +290,60 @@ function initializeDatabase() {
         }
     }
     
+    // Check and update menu table structure
+    $checkMenuTable = $conn->query("SHOW TABLES LIKE 'menu'");
+    if ($checkMenuTable && $checkMenuTable->num_rows > 0) {
+        $menuColumns = $conn->query("SHOW COLUMNS FROM menu");
+        $existingMenuColumns = [];
+        while ($col = $menuColumns->fetch_assoc()) {
+            $existingMenuColumns[] = $col['Field'];
+        }
+        
+        // Add category_id if it doesn't exist
+        if (!in_array('category_id', $existingMenuColumns)) {
+            $alterSql = "ALTER TABLE menu ADD COLUMN category_id INT NULL AFTER price";
+            if (!$conn->query($alterSql)) {
+                // Ignore error if column already exists or other issues
+            }
+        }
+        
+        // Add subcategory_id if it doesn't exist
+        if (!in_array('subcategory_id', $existingMenuColumns)) {
+            $alterSql = "ALTER TABLE menu ADD COLUMN subcategory_id INT NULL AFTER category_id";
+            if (!$conn->query($alterSql)) {
+                // Ignore error if column already exists or other issues
+            }
+        }
+        
+        // Add foreign key constraints if tables exist and constraints don't exist
+        $checkCategoriesTable = $conn->query("SHOW TABLES LIKE 'categories'");
+        $checkSubcategoriesTable = $conn->query("SHOW TABLES LIKE 'subcategories'");
+        
+        if ($checkCategoriesTable && $checkCategoriesTable->num_rows > 0) {
+            // Check if foreign key already exists for category_id
+            $fkCheck = $conn->query("SELECT CONSTRAINT_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'menu' AND COLUMN_NAME = 'category_id' AND REFERENCED_TABLE_NAME = 'categories'");
+            if (!$fkCheck || $fkCheck->num_rows == 0) {
+                $alterSql = "ALTER TABLE menu ADD CONSTRAINT fk_menu_category FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL";
+                $conn->query($alterSql); // Ignore errors if constraint already exists
+            }
+        }
+        
+        if ($checkSubcategoriesTable && $checkSubcategoriesTable->num_rows > 0) {
+            // Check if foreign key already exists for subcategory_id
+            $fkCheck = $conn->query("SELECT CONSTRAINT_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'menu' AND COLUMN_NAME = 'subcategory_id' AND REFERENCED_TABLE_NAME = 'subcategories'");
+            if (!$fkCheck || $fkCheck->num_rows == 0) {
+                $alterSql = "ALTER TABLE menu ADD CONSTRAINT fk_menu_subcategory FOREIGN KEY (subcategory_id) REFERENCES subcategories(id) ON DELETE SET NULL";
+                $conn->query($alterSql); // Ignore errors if constraint already exists
+            }
+        }
+        
+        // Remove old category column if it exists (we use category_id instead)
+        if (in_array('category', $existingMenuColumns) && in_array('category_id', $existingMenuColumns)) {
+            $alterSql = "ALTER TABLE menu DROP COLUMN category";
+            $conn->query($alterSql); // Ignore errors
+        }
+    }
+    
     // Create default superadmin if not exists
     $conn->select_db(DB_NAME);
     $checkAdmin = $conn->query("SELECT COUNT(*) as count FROM superadmin");

@@ -21,14 +21,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         if ($_POST['action'] == 'create') {
             $food_name = trim($_POST['food_name'] ?? '');
             $price = floatval($_POST['price'] ?? 0);
+            $category_id = intval($_POST['category_id'] ?? 0);
+            $subcategory_id = intval($_POST['subcategory_id'] ?? 0);
             
-            if (empty($food_name) || $price <= 0) {
+            if (empty($food_name) || $price <= 0 || $category_id <= 0 || $subcategory_id <= 0) {
                 $message = "Please fill all required fields correctly!";
                 $messageType = 'error';
             } else {
-                $stmt = $conn->prepare("INSERT INTO menu (food_name, price) VALUES (?, ?)");
+                $stmt = $conn->prepare("INSERT INTO menu (food_name, price, category_id, subcategory_id) VALUES (?, ?, ?, ?)");
                 if ($stmt) {
-                    $stmt->bind_param("sd", $food_name, $price);
+                    $stmt->bind_param("sdii", $food_name, $price, $category_id, $subcategory_id);
                     if ($stmt->execute()) {
                         $message = "Menu item created successfully!";
                         $messageType = 'success';
@@ -50,14 +52,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $id = intval($_POST['id'] ?? 0);
             $food_name = trim($_POST['food_name'] ?? '');
             $price = floatval($_POST['price'] ?? 0);
+            $category_id = intval($_POST['category_id'] ?? 0);
+            $subcategory_id = intval($_POST['subcategory_id'] ?? 0);
             
-            if (empty($food_name) || $price <= 0 || $id <= 0) {
+            if (empty($food_name) || $price <= 0 || $id <= 0 || $category_id <= 0 || $subcategory_id <= 0) {
                 $message = "Please fill all required fields correctly!";
                 $messageType = 'error';
             } else {
-                $stmt = $conn->prepare("UPDATE menu SET food_name=?, price=? WHERE id=?");
+                $stmt = $conn->prepare("UPDATE menu SET food_name=?, price=?, category_id=?, subcategory_id=? WHERE id=?");
                 if ($stmt) {
-                    $stmt->bind_param("sdi", $food_name, $price, $id);
+                    $stmt->bind_param("sdiii", $food_name, $price, $category_id, $subcategory_id, $id);
                     if ($stmt->execute()) {
                         $message = "Menu item updated successfully!";
                         $messageType = 'success';
@@ -108,8 +112,20 @@ if (isset($_GET['msg'])) {
     $messageType = $_GET['type'] ?? 'success';
 }
 
-// Fetch all menu items
-$menuItems = $conn->query("SELECT * FROM menu ORDER BY food_name");
+// Fetch all categories for dropdown
+$categories = $conn->query("SELECT * FROM categories ORDER BY category_name");
+if (!$categories) {
+    die("Error fetching categories: " . $conn->error);
+}
+
+// Fetch all subcategories for dropdown
+$allSubcategories = $conn->query("SELECT * FROM subcategories ORDER BY category_id, subcategory_name");
+if (!$allSubcategories) {
+    die("Error fetching subcategories: " . $conn->error);
+}
+
+// Fetch all menu items with category and subcategory names
+$menuItems = $conn->query("SELECT m.*, c.category_name, s.subcategory_name FROM menu m LEFT JOIN categories c ON m.category_id = c.id LEFT JOIN subcategories s ON m.subcategory_id = s.id ORDER BY c.category_name, s.subcategory_name, m.food_name");
 if (!$menuItems) {
     die("Error fetching menu items: " . $conn->error);
 }
@@ -124,7 +140,37 @@ $conn->close();
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="assets/css/style.css">
     <script>
-        var openModal, closeModal, deleteRecord;
+        var openModal, closeModal, deleteRecord, updateSubcategories;
+        
+        // Subcategories data
+        var subcategoriesData = <?php 
+            $subcategoriesArray = [];
+            $allSubcategories->data_seek(0);
+            while ($sub = $allSubcategories->fetch_assoc()) {
+                if (!isset($subcategoriesArray[$sub['category_id']])) {
+                    $subcategoriesArray[$sub['category_id']] = [];
+                }
+                $subcategoriesArray[$sub['category_id']][] = $sub;
+            }
+            echo json_encode($subcategoriesArray);
+        ?>;
+        
+        // Function to update subcategories dropdown based on selected category
+        updateSubcategories = function(categoryId) {
+            var subcategorySelect = document.getElementById('subcategory_id');
+            if (!subcategorySelect) return;
+            
+            subcategorySelect.innerHTML = '<option value="">Select Subcategory</option>';
+            
+            if (categoryId && subcategoriesData[categoryId]) {
+                subcategoriesData[categoryId].forEach(function(sub) {
+                    var option = document.createElement('option');
+                    option.value = sub.id;
+                    option.textContent = sub.subcategory_name;
+                    subcategorySelect.appendChild(option);
+                });
+            }
+        };
         
         (function() {
             openModal = function(action, data) {
@@ -145,9 +191,16 @@ $conn->close();
                     document.getElementById('formId').value = data.id || '';
                     document.getElementById('food_name').value = data.food_name || '';
                     document.getElementById('price').value = data.price || '';
+                    document.getElementById('category_id').value = data.category_id || '';
+                    // Trigger subcategory update
+                    updateSubcategories(data.category_id);
+                    setTimeout(function() {
+                        document.getElementById('subcategory_id').value = data.subcategory_id || '';
+                    }, 100);
                 } else {
                     form.reset();
                     document.getElementById('formId').value = '';
+                    document.getElementById('subcategory_id').innerHTML = '<option value="">Select Category First</option>';
                 }
                 
                 modal.classList.remove('hidden');
@@ -194,15 +247,29 @@ $conn->close();
                         <thead class="bg-gradient-to-r from-indigo-600 to-purple-600 text-white">
                             <tr>
                                 <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">ID</th>
+                                <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Category</th>
+                                <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Subcategory</th>
                                 <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Food Name</th>
                                 <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Price</th>
                                 <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Actions</th>
                             </tr>
                         </thead>
                         <tbody class="bg-white divide-y divide-gray-200">
-                            <?php while ($row = $menuItems->fetch_assoc()): ?>
+                            <?php 
+                            $menuItems->data_seek(0);
+                            while ($row = $menuItems->fetch_assoc()): ?>
                             <tr class="hover:bg-indigo-50 transition-colors">
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo $row['id']; ?></td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <span class="px-3 py-1 bg-purple-100 text-purple-800 rounded-full text-xs font-semibold">
+                                        <?php echo htmlspecialchars($row['category_name'] ?? 'N/A'); ?>
+                                    </span>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <span class="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-semibold">
+                                        <?php echo htmlspecialchars($row['subcategory_name'] ?? 'N/A'); ?>
+                                    </span>
+                                </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900"><?php echo htmlspecialchars($row['food_name']); ?></td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600 font-semibold">
                                     Rs <?php echo number_format($row['price'], 2); ?>
@@ -234,6 +301,25 @@ $conn->close();
             <form method="POST" id="menuForm" class="space-y-4">
                 <input type="hidden" name="action" id="formAction" value="create">
                 <input type="hidden" name="id" id="formId">
+                
+                <div>
+                    <label for="category_id" class="block text-sm font-semibold text-gray-700 mb-2">Category *</label>
+                    <select id="category_id" name="category_id" required onchange="updateSubcategories(this.value)" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
+                        <option value="">Select Category</option>
+                        <?php
+                        $categories->data_seek(0);
+                        while ($cat = $categories->fetch_assoc()): ?>
+                            <option value="<?php echo $cat['id']; ?>"><?php echo htmlspecialchars($cat['category_name']); ?></option>
+                        <?php endwhile; ?>
+                    </select>
+                </div>
+                
+                <div>
+                    <label for="subcategory_id" class="block text-sm font-semibold text-gray-700 mb-2">Subcategory *</label>
+                    <select id="subcategory_id" name="subcategory_id" required class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
+                        <option value="">Select Category First</option>
+                    </select>
+                </div>
                 
                 <div>
                     <label for="food_name" class="block text-sm font-semibold text-gray-700 mb-2">Food Name *</label>

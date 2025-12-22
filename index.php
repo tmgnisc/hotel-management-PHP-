@@ -107,6 +107,54 @@ if (!isset($_SESSION['admin_logged_in'])) {
                     </div>
                 </div>
                 
+                <!-- Reports Export Section -->
+                <div class="bg-white rounded-xl shadow-md p-6 md:p-8 mb-6">
+                    <h3 class="text-xl font-bold text-gray-900 mb-4">📊 Download Reports</h3>
+                    
+                    <!-- Date Filter -->
+                    <div class="mb-6">
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Select Date Range</label>
+                        <div class="flex flex-wrap gap-3 mb-4">
+                            <button onclick="setPeriod('today')" id="btn-today" class="px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-all text-sm period-btn">
+                                Today
+                            </button>
+                            <button onclick="setPeriod('7days')" id="btn-7days" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300 transition-all text-sm period-btn">
+                                Last 7 Days
+                            </button>
+                            <button onclick="setPeriod('30days')" id="btn-30days" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300 transition-all text-sm period-btn">
+                                Last 30 Days
+                            </button>
+                            <button onclick="setPeriod('custom')" id="btn-custom" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300 transition-all text-sm period-btn">
+                                Custom Range
+                            </button>
+                        </div>
+                        
+                        <!-- Custom Date Range -->
+                        <div id="custom-date-range" class="hidden grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Start Date</label>
+                                <input type="date" id="start_date" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">End Date</label>
+                                <input type="date" id="end_date" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Export Buttons -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <button onclick="exportReport('orders')" class="px-6 py-3 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-lg font-semibold hover:from-green-700 hover:to-green-800 transition-all shadow-lg hover:shadow-xl flex items-center justify-center gap-2">
+                            <span>📋</span>
+                            <span>Export Order Details</span>
+                        </button>
+                        <button onclick="exportReport('bookings')" class="px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg font-semibold hover:from-blue-700 hover:to-blue-800 transition-all shadow-lg hover:shadow-xl flex items-center justify-center gap-2">
+                            <span>📅</span>
+                            <span>Export Booking Details</span>
+                        </button>
+                    </div>
+                </div>
+                
                 <div class="bg-white rounded-xl shadow-md p-6 md:p-8">
                     <h3 class="text-xl font-bold text-gray-900 mb-4">Quick Actions</h3>
                     <div class="grid grid-cols-2 gap-3">
@@ -141,5 +189,61 @@ if (!isset($_SESSION['admin_logged_in'])) {
     </div>
 
     <script src="assets/js/main.js"></script>
+    <script>
+        let currentPeriod = 'today';
+        
+        function setPeriod(period) {
+            currentPeriod = period;
+            
+            // Update button styles
+            document.querySelectorAll('.period-btn').forEach(btn => {
+                btn.classList.remove('bg-indigo-600', 'text-white');
+                btn.classList.add('bg-gray-200', 'text-gray-700');
+            });
+            
+            // Show/hide custom date range
+            const customRange = document.getElementById('custom-date-range');
+            if (period === 'custom') {
+                customRange.classList.remove('hidden');
+                customRange.classList.add('grid');
+                document.getElementById('btn-custom').classList.remove('bg-gray-200', 'text-gray-700');
+                document.getElementById('btn-custom').classList.add('bg-indigo-600', 'text-white');
+            } else {
+                customRange.classList.add('hidden');
+                customRange.classList.remove('grid');
+                document.getElementById('btn-' + period).classList.remove('bg-gray-200', 'text-gray-700');
+                document.getElementById('btn-' + period).classList.add('bg-indigo-600', 'text-white');
+            }
+        }
+        
+        function exportReport(type) {
+            let url = 'export_reports.php?type=' + type + '&period=' + currentPeriod;
+            
+            if (currentPeriod === 'custom') {
+                const startDate = document.getElementById('start_date').value;
+                const endDate = document.getElementById('end_date').value;
+                
+                if (!startDate || !endDate) {
+                    alert('Please select both start and end dates for custom range.');
+                    return;
+                }
+                
+                if (new Date(startDate) > new Date(endDate)) {
+                    alert('Start date cannot be after end date.');
+                    return;
+                }
+                
+                url += '&start_date=' + startDate + '&end_date=' + endDate;
+            }
+            
+            // Open in new window to trigger download
+            window.open(url, '_blank');
+        }
+        
+        // Initialize with today selected
+        document.addEventListener('DOMContentLoaded', function() {
+            setPeriod('today');
+        });
+    </script>
 </body>
 </html>
