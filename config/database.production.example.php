@@ -38,3 +38,4 @@ function initializeDatabase() {
     // ... (copy the rest from your current database.php)
 }
 
+

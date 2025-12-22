@@ -86,15 +86,35 @@ function initializeDatabase() {
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         )",
         
+        "CREATE TABLE IF NOT EXISTS categories (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            category_name VARCHAR(255) NOT NULL UNIQUE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        )",
+        
+        "CREATE TABLE IF NOT EXISTS subcategories (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            category_id INT NOT NULL,
+            subcategory_name VARCHAR(255) NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE,
+            UNIQUE KEY unique_subcategory (category_id, subcategory_name)
+        )",
+        
         "CREATE TABLE IF NOT EXISTS menu (
             id INT AUTO_INCREMENT PRIMARY KEY,
             food_name VARCHAR(255) NOT NULL,
             price DECIMAL(10, 2) NOT NULL,
+            category_id INT,
+            subcategory_id INT,
             description TEXT,
-            category VARCHAR(100),
             status ENUM('available', 'unavailable') DEFAULT 'available',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL,
+            FOREIGN KEY (subcategory_id) REFERENCES subcategories(id) ON DELETE SET NULL
         )",
         
         "CREATE TABLE IF NOT EXISTS order_details (
@@ -117,6 +137,16 @@ function initializeDatabase() {
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             FOREIGN KEY (table_id) REFERENCES tables(id) ON DELETE SET NULL,
             FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE SET NULL
+        )",
+        
+        "CREATE TABLE IF NOT EXISTS users (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            username VARCHAR(100) NOT NULL UNIQUE,
+            email VARCHAR(255) NOT NULL UNIQUE,
+            password VARCHAR(255) NOT NULL,
+            role ENUM('staff', 'manager') NOT NULL DEFAULT 'staff',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         )"
     ];
     

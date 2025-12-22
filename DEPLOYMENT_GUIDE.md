@@ -201,3 +201,4 @@ If you encounter issues:
 3. Test database connection separately
 4. Check PHP version compatibility
 
+
