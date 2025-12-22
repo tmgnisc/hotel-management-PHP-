@@ -18,6 +18,7 @@ if (!isset($_SESSION['admin_logged_in'])) {
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <link rel="stylesheet" href="assets/css/style.css">
     <style>
         .devanagari-font {
@@ -174,6 +175,63 @@ if (!isset($_SESSION['admin_logged_in'])) {
                 </div>
             </div>
 
+            <!-- Analytics Chart Section -->
+            <div class="bg-white rounded-xl shadow-md p-6 md:p-8 mb-6">
+                <div class="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
+                    <div>
+                        <h3 class="text-xl md:text-2xl font-bold text-gray-900 mb-2">📈 Analytics Dashboard</h3>
+                        <p class="text-gray-600 text-sm">Track orders, revenue, and bookings over time</p>
+                    </div>
+                    <div class="mt-4 md:mt-0 flex flex-wrap gap-2">
+                        <button onclick="loadChart('today')" id="chart-btn-today" class="px-3 py-1.5 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-all text-xs chart-period-btn">
+                            Today
+                        </button>
+                        <button onclick="loadChart('7days')" id="chart-btn-7days" class="px-3 py-1.5 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300 transition-all text-xs chart-period-btn">
+                            7 Days
+                        </button>
+                        <button onclick="loadChart('30days')" id="chart-btn-30days" class="px-3 py-1.5 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300 transition-all text-xs chart-period-btn">
+                            30 Days
+                        </button>
+                        <button onclick="showCustomChartRange()" id="chart-btn-custom" class="px-3 py-1.5 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300 transition-all text-xs chart-period-btn">
+                            Custom
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Custom Date Range for Chart -->
+                <div id="chart-custom-range" class="hidden grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Start Date</label>
+                        <input type="date" id="chart_start_date" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">End Date</label>
+                        <div class="flex gap-2">
+                            <input type="date" id="chart_end_date" class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
+                            <button onclick="loadChart('custom')" class="px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-all">
+                                Apply
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Chart Summary Cards -->
+                <div id="chart-summary" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <!-- Summary cards will be populated by JavaScript -->
+                </div>
+                
+                <!-- Chart Container -->
+                <div class="relative h-64 md:h-96">
+                    <canvas id="analyticsChart"></canvas>
+                </div>
+                
+                <!-- Loading Indicator -->
+                <div id="chart-loading" class="hidden text-center py-8">
+                    <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                    <p class="mt-2 text-gray-600">Loading analytics...</p>
+                </div>
+            </div>
+
             <!-- Welcome Card -->
             <div class="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl shadow-md p-6 md:p-8 border-l-4 border-indigo-600">
                 <h2 class="text-3xl md:text-4xl font-bold text-indigo-600 mb-2 devanagari-font">
@@ -243,7 +301,197 @@ if (!isset($_SESSION['admin_logged_in'])) {
         // Initialize with today selected
         document.addEventListener('DOMContentLoaded', function() {
             setPeriod('today');
+            loadChart('30days'); // Load 30 days chart by default
         });
+        
+        // Chart functionality
+        let analyticsChart = null;
+        let currentChartPeriod = '30days';
+        
+        function loadChart(period) {
+            currentChartPeriod = period;
+            
+            // Update button styles
+            document.querySelectorAll('.chart-period-btn').forEach(btn => {
+                btn.classList.remove('bg-indigo-600', 'text-white');
+                btn.classList.add('bg-gray-200', 'text-gray-700');
+            });
+            
+            // Show/hide custom date range
+            const customRange = document.getElementById('chart-custom-range');
+            if (period === 'custom') {
+                customRange.classList.remove('hidden');
+                customRange.classList.add('grid');
+                document.getElementById('chart-btn-custom').classList.remove('bg-gray-200', 'text-gray-700');
+                document.getElementById('chart-btn-custom').classList.add('bg-indigo-600', 'text-white');
+            } else {
+                customRange.classList.add('hidden');
+                customRange.classList.remove('grid');
+                document.getElementById('chart-btn-' + period).classList.remove('bg-gray-200', 'text-gray-700');
+                document.getElementById('chart-btn-' + period).classList.add('bg-indigo-600', 'text-white');
+            }
+            
+            // Show loading
+            document.getElementById('chart-loading').classList.remove('hidden');
+            document.getElementById('analyticsChart').style.display = 'none';
+            
+            // Build URL
+            let url = 'api/analytics.php?period=' + period;
+            if (period === 'custom') {
+                const startDate = document.getElementById('chart_start_date').value;
+                const endDate = document.getElementById('chart_end_date').value;
+                if (startDate && endDate) {
+                    url += '&start_date=' + startDate + '&end_date=' + endDate;
+                } else {
+                    document.getElementById('chart-loading').classList.add('hidden');
+                    document.getElementById('analyticsChart').style.display = 'block';
+                    alert('Please select both start and end dates.');
+                    return;
+                }
+            }
+            
+            // Fetch data
+            fetch(url)
+                .then(response => response.json())
+                .then(data => {
+                    updateChart(data);
+                    updateSummary(data.summary);
+                    document.getElementById('chart-loading').classList.add('hidden');
+                    document.getElementById('analyticsChart').style.display = 'block';
+                })
+                .catch(error => {
+                    console.error('Error loading chart:', error);
+                    document.getElementById('chart-loading').classList.add('hidden');
+                    document.getElementById('analyticsChart').style.display = 'block';
+                    alert('Error loading analytics data. Please try again.');
+                });
+        }
+        
+        function updateChart(data) {
+            const ctx = document.getElementById('analyticsChart').getContext('2d');
+            
+            if (analyticsChart) {
+                analyticsChart.destroy();
+            }
+            
+            analyticsChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: data.labels,
+                    datasets: data.datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: {
+                                usePointStyle: true,
+                                padding: 15,
+                                font: {
+                                    size: 12,
+                                    weight: '500'
+                                }
+                            }
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                            padding: 12,
+                            titleFont: {
+                                size: 14,
+                                weight: 'bold'
+                            },
+                            bodyFont: {
+                                size: 13
+                            },
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    if (context.dataset.label === 'Revenue (Rs)') {
+                                        label += 'Rs ' + context.parsed.y.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                                    } else {
+                                        label += context.parsed.y;
+                                    }
+                                    return label;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            position: 'left',
+                            ticks: {
+                                precision: 0
+                            },
+                            title: {
+                                display: true,
+                                text: 'Orders & Bookings'
+                            }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return 'Rs ' + value.toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 0});
+                                }
+                            },
+                            title: {
+                                display: true,
+                                text: 'Revenue (Rs)'
+                            },
+                            grid: {
+                                drawOnChartArea: false
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        function updateSummary(summary) {
+            const summaryHtml = `
+                <div class="bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg p-4 border border-blue-200">
+                    <p class="text-xs text-blue-600 font-medium uppercase mb-1">Total Orders</p>
+                    <p class="text-2xl font-bold text-blue-900">${summary.total_orders}</p>
+                    <p class="text-xs text-blue-600 mt-1">Avg: ${summary.avg_orders_per_day}/day</p>
+                </div>
+                <div class="bg-gradient-to-r from-green-50 to-green-100 rounded-lg p-4 border border-green-200">
+                    <p class="text-xs text-green-600 font-medium uppercase mb-1">Total Revenue</p>
+                    <p class="text-2xl font-bold text-green-900">Rs ${summary.total_revenue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+                    <p class="text-xs text-green-600 mt-1">Avg: Rs ${summary.avg_revenue_per_day.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}/day</p>
+                </div>
+                <div class="bg-gradient-to-r from-pink-50 to-pink-100 rounded-lg p-4 border border-pink-200">
+                    <p class="text-xs text-pink-600 font-medium uppercase mb-1">Total Bookings</p>
+                    <p class="text-2xl font-bold text-pink-900">${summary.total_bookings}</p>
+                    <p class="text-xs text-pink-600 mt-1">Active days: ${summary.active_days}</p>
+                </div>
+                <div class="bg-gradient-to-r from-purple-50 to-purple-100 rounded-lg p-4 border border-purple-200">
+                    <p class="text-xs text-purple-600 font-medium uppercase mb-1">Active Days</p>
+                    <p class="text-2xl font-bold text-purple-900">${summary.active_days}</p>
+                    <p class="text-xs text-purple-600 mt-1">Days with activity</p>
+                </div>
+            `;
+            document.getElementById('chart-summary').innerHTML = summaryHtml;
+        }
+        
+        function showCustomChartRange() {
+            document.getElementById('chart-custom-range').classList.remove('hidden');
+            document.getElementById('chart-custom-range').classList.add('grid');
+            document.getElementById('chart-btn-custom').classList.remove('bg-gray-200', 'text-gray-700');
+            document.getElementById('chart-btn-custom').classList.add('bg-indigo-600', 'text-white');
+        }
     </script>
 </body>
 </html>
