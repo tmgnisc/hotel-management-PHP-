@@ -44,9 +44,9 @@ $today = date('M d, Y h:i A');
 $orderDate = $order['order_date'] ? date('M d, Y h:i A', strtotime($order['order_date'])) : 'N/A';
 $subtotal = 0;
 foreach ($items as $item) {
-    $subtotal += $item['total'] ?? 0;
+    $subtotal += isset($item['total']) ? (float)$item['total'] : 0;
 }
-$total = $order['total_amount'] ?? $subtotal;
+$total = isset($order['total_amount']) ? (float)$order['total_amount'] : $subtotal;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -110,11 +110,15 @@ $total = $order['total_amount'] ?? $subtotal;
                         </tr>
                     <?php else: ?>
                         <?php foreach ($items as $item): ?>
+                            <?php $portionLabel = (isset($item['portion']) && $item['portion'] === 'half') ? ' (Half)' : ''; ?>
                             <tr class="border-b">
-                                <td class="py-3 px-4 text-gray-800"><?php echo htmlspecialchars($item['food_name'] ?? ''); ?></td>
+                                <td class="py-3 px-4 text-gray-800">
+                                    <?php echo htmlspecialchars($item['food_name'] ?? ''); ?>
+                                    <span class="text-xs text-gray-500"><?php echo $portionLabel; ?></span>
+                                </td>
                                 <td class="py-3 px-4 text-right text-gray-800"><?php echo intval($item['qty'] ?? 0); ?></td>
-                                <td class="py-3 px-4 text-right text-gray-800"><?php echo number_format($item['price'] ?? 0, 2); ?></td>
-                                <td class="py-3 px-4 text-right text-gray-900 font-semibold"><?php echo number_format($item['total'] ?? 0, 2); ?></td>
+                                <td class="py-3 px-4 text-right text-gray-800"><?php echo number_format(isset($item['price']) ? (float)$item['price'] : 0, 2); ?></td>
+                                <td class="py-3 px-4 text-right text-gray-900 font-semibold"><?php echo number_format(isset($item['total']) ? (float)$item['total'] : 0, 2); ?></td>
                             </tr>
                         <?php endforeach; ?>
                     <?php endif; ?>
