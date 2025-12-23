@@ -440,13 +440,16 @@ $conn->close();
                                         </span>
                                     </div>
                                 </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium flex flex-wrap gap-2">
                                     <button onclick="openModal('edit', <?php echo htmlspecialchars(json_encode($row)); ?>)" class="px-3 py-1 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors text-xs">
                                         Edit
                                     </button>
                                     <button onclick="deleteRecord(<?php echo $row['id']; ?>)" class="px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors text-xs">
                                         Delete
                                     </button>
+                                    <a href="order_bill.php?id=<?php echo $row['id']; ?>" target="_blank" class="px-3 py-1 bg-emerald-500 text-white rounded-md hover:bg-emerald-600 transition-colors text-xs inline-flex items-center gap-1">
+                                        🧾 Bill
+                                    </a>
                                 </td>
                             </tr>
                             <?php endwhile; ?>

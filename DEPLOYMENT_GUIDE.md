@@ -202,3 +202,4 @@ If you encounter issues:
 4. Check PHP version compatibility
 
 
+
