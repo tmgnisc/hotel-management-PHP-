@@ -56,89 +56,126 @@ $total = isset($order['total_amount']) ? (float)$order['total_amount'] : $subtot
     <title>Order Bill - <?php echo htmlspecialchars($order['order_number']); ?></title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
+        @page {
+            size: 80mm auto;
+            margin: 0;
+            padding: 0;
+        }
         @media print {
             .no-print { display: none; }
-            body { background: #fff; }
+            body { 
+                background: #fff;
+                margin: 0;
+                padding: 0;
+                width: 80mm;
+                font-size: 10px;
+            }
+            .bill-container {
+                width: 80mm;
+                max-width: 80mm;
+                margin: 0;
+                padding: 5mm 4mm;
+                box-shadow: none;
+                border: none;
+                font-size: 10px;
+            }
+            * {
+                box-sizing: border-box;
+            }
+            table {
+                font-size: 9px;
+            }
+            h1 {
+                font-size: 14px;
+            }
+        }
+        @media screen {
+            .bill-container {
+                max-width: 80mm;
+                margin: 20px auto;
+                padding: 8mm 5mm;
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                border: 1px solid #e5e7eb;
+            }
         }
         .devanagari-font {
             font-family: 'Noto Sans Devanagari', sans-serif;
+        }
+        body {
+            font-size: 11px;
+        }
+        .bill-container {
+            font-size: 11px;
         }
     </style>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@500;700&display=swap" rel="stylesheet">
 </head>
 <body class="bg-gray-100">
-    <div class="max-w-3xl mx-auto my-6 bg-white shadow-lg rounded-xl overflow-hidden">
-        <div class="px-6 py-5 bg-gray-900 text-white flex justify-between items-center">
-            <div>
-                <h1 class="text-2xl font-bold devanagari-font"><?php echo htmlspecialchars($companyName); ?></h1>
-                <p class="text-sm text-gray-200">Order Bill / Tax Invoice</p>
-            </div>
-            <div class="text-right text-sm">
-                <p class="font-semibold">Generated: <?php echo $today; ?></p>
-                <p>Bill No: <?php echo htmlspecialchars($order['order_number']); ?></p>
-            </div>
+    <div class="bill-container bg-white">
+        <div class="text-center border-b border-gray-300 pb-2 mb-3">
+            <h1 class="text-base font-bold devanagari-font mb-1"><?php echo htmlspecialchars($companyName); ?></h1>
+            <p class="text-xs text-gray-600">Order Bill / Tax Invoice</p>
         </div>
 
-        <div class="px-6 py-5 space-y-3 text-sm text-gray-800">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                    <p><span class="font-semibold">Order Date:</span> <?php echo $orderDate; ?></p>
-                    <p><span class="font-semibold">Table:</span> <?php echo htmlspecialchars($order['table_number'] ?? 'N/A'); ?></p>
-                    <p><span class="font-semibold">Payment:</span> <?php echo htmlspecialchars($order['payment_status'] ?? 'N/A'); ?> (<?php echo htmlspecialchars($order['payment_method'] ?? 'N/A'); ?>)</p>
-                </div>
-                <div>
-                    <p><span class="font-semibold">Order Status:</span> <?php echo htmlspecialchars($order['order_status'] ?? 'N/A'); ?></p>
-                    <p><span class="font-semibold">Notes:</span> <?php echo htmlspecialchars($order['notes'] ?? '-'); ?></p>
-                </div>
-            </div>
+        <div class="space-y-1 text-xs text-gray-800 mb-3">
+            <p><span class="font-semibold">Bill No:</span> <?php echo htmlspecialchars($order['order_number']); ?></p>
+            <p><span class="font-semibold">Date:</span> <?php echo $orderDate; ?></p>
+            <p><span class="font-semibold">Table:</span> <?php echo htmlspecialchars($order['table_number'] ?? 'N/A'); ?></p>
+            <p><span class="font-semibold">Payment:</span> <?php echo htmlspecialchars($order['payment_status'] ?? 'N/A'); ?> (<?php echo htmlspecialchars($order['payment_method'] ?? 'N/A'); ?>)</p>
+            <?php if (!empty($order['notes'])): ?>
+                <p><span class="font-semibold">Notes:</span> <?php echo htmlspecialchars($order['notes']); ?></p>
+            <?php endif; ?>
         </div>
 
-        <div class="px-6 pb-6">
-            <table class="w-full text-sm border border-gray-200">
-                <thead class="bg-gray-100">
-                    <tr>
-                        <th class="py-3 px-4 text-left font-semibold text-gray-700 border-b">Item</th>
-                        <th class="py-3 px-4 text-right font-semibold text-gray-700 border-b">Qty</th>
-                        <th class="py-3 px-4 text-right font-semibold text-gray-700 border-b">Rate (Rs)</th>
-                        <th class="py-3 px-4 text-right font-semibold text-gray-700 border-b">Total (Rs)</th>
+        <div class="border-t border-b border-gray-300 py-2 my-2">
+            <table class="w-full text-xs">
+                <thead>
+                    <tr class="border-b border-gray-300">
+                        <th class="text-left py-1 font-semibold">Item</th>
+                        <th class="text-right py-1 font-semibold">Qty</th>
+                        <th class="text-right py-1 font-semibold">Rate</th>
+                        <th class="text-right py-1 font-semibold">Total</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php if (count($items) === 0): ?>
                         <tr>
-                            <td colspan="4" class="py-4 px-4 text-center text-gray-500">No items found</td>
+                            <td colspan="4" class="py-2 text-center text-gray-500">No items found</td>
                         </tr>
                     <?php else: ?>
                         <?php foreach ($items as $item): ?>
                             <?php $portionLabel = (isset($item['portion']) && $item['portion'] === 'half') ? ' (Half)' : ''; ?>
-                            <tr class="border-b">
-                                <td class="py-3 px-4 text-gray-800">
+                            <tr class="border-b border-gray-200">
+                                <td class="py-1 text-gray-800">
                                     <?php echo htmlspecialchars($item['food_name'] ?? ''); ?>
-                                    <span class="text-xs text-gray-500"><?php echo $portionLabel; ?></span>
+                                    <?php if ($portionLabel): ?>
+                                        <span class="text-gray-500"><?php echo $portionLabel; ?></span>
+                                    <?php endif; ?>
                                 </td>
-                                <td class="py-3 px-4 text-right text-gray-800"><?php echo intval($item['qty'] ?? 0); ?></td>
-                                <td class="py-3 px-4 text-right text-gray-800"><?php echo number_format(isset($item['price']) ? (float)$item['price'] : 0, 2); ?></td>
-                                <td class="py-3 px-4 text-right text-gray-900 font-semibold"><?php echo number_format(isset($item['total']) ? (float)$item['total'] : 0, 2); ?></td>
+                                <td class="py-1 text-right text-gray-800"><?php echo intval($item['qty'] ?? 0); ?></td>
+                                <td class="py-1 text-right text-gray-800"><?php echo number_format(isset($item['price']) ? (float)$item['price'] : 0, 2); ?></td>
+                                <td class="py-1 text-right text-gray-900 font-semibold"><?php echo number_format(isset($item['total']) ? (float)$item['total'] : 0, 2); ?></td>
                             </tr>
                         <?php endforeach; ?>
                     <?php endif; ?>
                 </tbody>
-                <tfoot>
-                    <tr>
-                        <td colspan="3" class="py-3 px-4 text-right font-semibold text-gray-700">Subtotal</td>
-                        <td class="py-3 px-4 text-right font-bold text-gray-900">Rs <?php echo number_format($subtotal, 2); ?></td>
-                    </tr>
-                    <tr>
-                        <td colspan="3" class="py-3 px-4 text-right font-semibold text-gray-700">Total</td>
-                        <td class="py-3 px-4 text-right font-bold text-gray-900">Rs <?php echo number_format($total, 2); ?></td>
-                    </tr>
-                </tfoot>
             </table>
         </div>
 
-        <div class="px-6 pb-6 flex justify-between items-center text-sm text-gray-600">
-            <p>Thank you for dining with us!</p>
-            <button class="no-print px-4 py-2 bg-indigo-600 text-white rounded-lg shadow hover:bg-indigo-700 transition" onclick="window.print()">
+        <div class="mt-3 space-y-1">
+            <div class="flex justify-between text-xs border-t border-gray-300 pt-2">
+                <span class="font-semibold">Subtotal:</span>
+                <span class="font-semibold">Rs <?php echo number_format($subtotal, 2); ?></span>
+            </div>
+            <div class="flex justify-between text-sm border-t-2 border-gray-900 pt-2">
+                <span class="font-bold">TOTAL:</span>
+                <span class="font-bold">Rs <?php echo number_format($total, 2); ?></span>
+            </div>
+        </div>
+
+        <div class="text-center mt-4 pt-3 border-t border-gray-300">
+            <p class="text-xs text-gray-600 mb-3">Thank you for dining with us!</p>
+            <button class="no-print px-3 py-1.5 bg-indigo-600 text-white text-xs rounded shadow hover:bg-indigo-700 transition" onclick="window.print()">
                 Print / Save as PDF
             </button>
         </div>

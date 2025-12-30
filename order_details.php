@@ -21,7 +21,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         if ($_POST['action'] == 'create') {
             $order_number = 'ORD' . date('Ymd') . rand(1000, 9999);
             $table_id = !empty($_POST['table_id']) ? intval($_POST['table_id']) : null;
-            $order_date = trim($_POST['order_date'] ?? '');
+            // Auto-set to current date/time if not provided
+            $order_date = !empty(trim($_POST['order_date'] ?? '')) ? trim($_POST['order_date']) : date('Y-m-d H:i:s');
             $order_status = trim($_POST['order_status'] ?? 'pending');
             $payment_status = trim($_POST['payment_status'] ?? 'pending');
             $payment_method = trim($_POST['payment_method'] ?? 'cash');
@@ -62,8 +63,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 }
             }
             
-            if (empty($order_date) || count($items) == 0) {
-                $message = "Please fill all required fields and select at least one food item!";
+            if (count($items) == 0) {
+                $message = "Please select at least one food item!";
                 $messageType = 'error';
             } else {
                 $itemsJson = json_encode($items);
@@ -92,7 +93,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         } elseif ($_POST['action'] == 'update') {
             $id = intval($_POST['id'] ?? 0);
             $table_id = !empty($_POST['table_id']) ? intval($_POST['table_id']) : null;
-            $order_date = trim($_POST['order_date'] ?? '');
+            // Auto-set to current date/time if not provided
+            $order_date = !empty(trim($_POST['order_date'] ?? '')) ? trim($_POST['order_date']) : date('Y-m-d H:i:s');
             $order_status = trim($_POST['order_status'] ?? 'pending');
             $payment_status = trim($_POST['payment_status'] ?? 'pending');
             $payment_method = trim($_POST['payment_method'] ?? 'cash');
@@ -133,8 +135,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 }
             }
             
-            if (empty($order_date) || count($items) == 0 || $id <= 0) {
-                $message = "Please fill all required fields and select at least one food item!";
+            if (count($items) == 0 || $id <= 0) {
+                $message = "Please select at least one food item!";
                 $messageType = 'error';
             } else {
                 $itemsJson = json_encode($items);
@@ -193,6 +195,19 @@ if (isset($_GET['msg'])) {
     $messageType = $_GET['type'] ?? 'success';
 }
 
+// Fetch pending orders separately
+// Show orders as pending if: order_status is pending OR (order_status is completed AND payment_status is pending)
+$pendingOrders = $conn->query("
+    SELECT o.*, t.table_number 
+    FROM order_details o 
+    LEFT JOIN tables t ON o.table_id = t.id 
+    WHERE o.order_status = 'pending' OR (o.order_status = 'completed' AND o.payment_status = 'pending')
+    ORDER BY o.order_date DESC
+");
+if (!$pendingOrders) {
+    die("Error fetching pending orders: " . $conn->error);
+}
+
 // Fetch all orders with table information
 $orders = $conn->query("
     SELECT o.*, t.table_number 
@@ -226,7 +241,7 @@ $conn->close();
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="assets/css/style.css">
     <script>
-        var openModal, closeModal, deleteRecord, calculateTotal, addFoodItem, removeFoodItem;
+        var openModal, closeModal, deleteRecord, calculateTotal, addFoodItem, removeFoodItem, initFoodSearch;
         var selectedFoods = [];
         var menuData = {};
         
@@ -292,12 +307,34 @@ $conn->close();
                 } else {
                     form.reset();
                     document.getElementById('formId').value = '';
+                    // Always set current date/time for new orders
                     var now = new Date();
-                    document.getElementById('order_date').value = now.toISOString().slice(0, 16);
+                    var year = now.getFullYear();
+                    var month = String(now.getMonth() + 1).padStart(2, '0');
+                    var day = String(now.getDate()).padStart(2, '0');
+                    var hours = String(now.getHours()).padStart(2, '0');
+                    var minutes = String(now.getMinutes()).padStart(2, '0');
+                    document.getElementById('order_date').value = year + '-' + month + '-' + day + 'T' + hours + ':' + minutes;
                 }
                 
                 calculateTotal();
                 modal.classList.remove('hidden');
+                
+                // Initialize food search after modal opens
+                setTimeout(function() {
+                    if (typeof initFoodSearch === 'function') {
+                        initFoodSearch();
+                    }
+                    // Clear search input
+                    var searchInput = document.getElementById('foodSearch');
+                    if (searchInput) {
+                        searchInput.value = '';
+                    }
+                    var searchResults = document.getElementById('foodSearchResults');
+                    if (searchResults) {
+                        searchResults.classList.add('hidden');
+                    }
+                }, 100);
             };
             
             closeModal = function() {
@@ -386,6 +423,79 @@ $conn->close();
                 document.getElementById('subtotal').value = subtotal.toFixed(2);
                 document.getElementById('total_amount').value = subtotal.toFixed(2);
             };
+            
+            // Food search functionality
+            var foodSearchInput = null;
+            var foodSearchResults = null;
+            
+            initFoodSearch = function() {
+                foodSearchInput = document.getElementById('foodSearch');
+                foodSearchResults = document.getElementById('foodSearchResults');
+                
+                if (!foodSearchInput || !foodSearchResults) return;
+                
+                foodSearchInput.addEventListener('input', function() {
+                    var searchTerm = this.value.toLowerCase().trim();
+                    
+                    if (searchTerm.length === 0) {
+                        foodSearchResults.classList.add('hidden');
+                        return;
+                    }
+                    
+                    // Filter menu items
+                    var filteredItems = [];
+                    for (var foodId in menuData) {
+                        var food = menuData[foodId];
+                        if (food.name.toLowerCase().includes(searchTerm)) {
+                            filteredItems.push(food);
+                        }
+                    }
+                    
+                    // Display results
+                    if (filteredItems.length > 0) {
+                        foodSearchResults.innerHTML = '';
+                        filteredItems.forEach(function(food) {
+                            var itemDiv = document.createElement('div');
+                            itemDiv.className = 'px-4 py-3 hover:bg-indigo-50 cursor-pointer border-b border-gray-100 transition-colors flex justify-between items-center';
+                            itemDiv.innerHTML = `
+                                <div>
+                                    <div class="font-medium text-gray-900">${food.name}</div>
+                                    <div class="text-sm text-gray-600">Rs ${food.price.toFixed(2)}</div>
+                                </div>
+                                <div class="text-indigo-600 font-semibold">+ Add</div>
+                            `;
+                            itemDiv.addEventListener('click', function() {
+                                addFoodItem(food.id, 1, null, 'full');
+                                foodSearchInput.value = '';
+                                foodSearchResults.classList.add('hidden');
+                            });
+                            foodSearchResults.appendChild(itemDiv);
+                        });
+                        foodSearchResults.classList.remove('hidden');
+                    } else {
+                        foodSearchResults.innerHTML = '<div class="px-4 py-3 text-gray-500 text-center">No items found matching your search</div>';
+                        foodSearchResults.classList.remove('hidden');
+                    }
+                });
+                
+                // Hide results when clicking outside
+                document.addEventListener('click', function(e) {
+                    if (foodSearchInput && foodSearchResults && 
+                        !foodSearchInput.contains(e.target) && 
+                        !foodSearchResults.contains(e.target)) {
+                        foodSearchResults.classList.add('hidden');
+                    }
+                });
+            }
+            
+            // Initialize search when DOM is ready
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', function() {
+                    setTimeout(initFoodSearch, 200);
+                });
+            } else {
+                setTimeout(initFoodSearch, 200);
+            }
         })();
     </script>
 </head>
@@ -408,7 +518,92 @@ $conn->close();
                 </div>
             <?php endif; ?>
 
-            <div class="bg-white rounded-xl shadow-md overflow-hidden">
+            <!-- Pending Orders Section -->
+            <div class="mb-8">
+                <h3 class="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                    <span class="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></span>
+                    Pending Orders
+                </h3>
+                <div class="bg-white rounded-xl shadow-md overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gradient-to-r from-yellow-500 to-orange-500 text-white">
+                                <tr>
+                                    <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">ID</th>
+                                    <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Order Number</th>
+                                    <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Table</th>
+                                    <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Order Date</th>
+                                    <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Total</th>
+                                    <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Payment</th>
+                                    <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-200">
+                                <?php 
+                                $pendingOrders->data_seek(0);
+                                $hasPendingOrders = false;
+                                while ($row = $pendingOrders->fetch_assoc()): 
+                                    $hasPendingOrders = true;
+                                ?>
+                                <tr class="hover:bg-yellow-50 transition-colors">
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo $row['id']; ?></td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900"><?php echo htmlspecialchars($row['order_number']); ?></td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600"><?php echo htmlspecialchars($row['table_number'] ?? 'N/A'); ?></td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                                        <?php echo $row['order_date'] ? date('M d, Y H:i', strtotime($row['order_date'])) : 'N/A'; ?>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">
+                                        Rs <?php echo number_format($row['total_amount'], 2); ?>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        <?php
+                                        $paymentStatusClass = [
+                                            'pending' => 'bg-yellow-100 text-yellow-800',
+                                            'paid' => 'bg-green-100 text-green-800',
+                                            'cancelled' => 'bg-red-100 text-red-800'
+                                        ];
+                                        $paymentStatus = $row['payment_status'];
+                                        $paymentClass = $paymentStatusClass[$paymentStatus] ?? 'bg-gray-100 text-gray-800';
+                                        ?>
+                                        <div class="flex flex-col gap-1">
+                                            <span class="px-3 py-1 rounded-full text-xs font-semibold capitalize <?php echo $paymentClass; ?>">
+                                                <?php echo $paymentStatus; ?>
+                                            </span>
+                                            <span class="text-xs text-gray-600 capitalize">
+                                                <?php echo $row['payment_method'] ?? 'N/A'; ?>
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium flex flex-wrap gap-2">
+                                        <button onclick="openModal('edit', <?php echo htmlspecialchars(json_encode($row)); ?>)" class="px-3 py-1 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors text-xs">
+                                            Edit
+                                        </button>
+                                        <button onclick="deleteRecord(<?php echo $row['id']; ?>)" class="px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors text-xs">
+                                            Delete
+                                        </button>
+                                        <a href="order_bill.php?id=<?php echo $row['id']; ?>" target="_blank" class="px-3 py-1 bg-emerald-500 text-white rounded-md hover:bg-emerald-600 transition-colors text-xs inline-flex items-center gap-1">
+                                            🧾 Bill
+                                        </a>
+                                    </td>
+                                </tr>
+                                <?php endwhile; ?>
+                                <?php if (!$hasPendingOrders): ?>
+                                <tr>
+                                    <td colspan="7" class="px-6 py-8 text-center text-gray-500">
+                                        No pending orders at the moment.
+                                    </td>
+                                </tr>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- All Orders Section -->
+            <div>
+                <h3 class="text-xl font-bold text-gray-900 mb-4">All Orders</h3>
+                <div class="bg-white rounded-xl shadow-md overflow-hidden">
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200">
                         <thead class="bg-gradient-to-r from-indigo-600 to-purple-600 text-white">
@@ -483,6 +678,7 @@ $conn->close();
                         </tbody>
                     </table>
                 </div>
+                </div>
             </div>
         </main>
     </div>
@@ -511,29 +707,31 @@ $conn->close();
                 </div>
                 
                 <div>
-                    <label for="order_date" class="block text-sm font-semibold text-gray-700 mb-2">Order Date & Time *</label>
-                    <input type="datetime-local" id="order_date" name="order_date" required class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
+                    <label for="order_date" class="block text-sm font-semibold text-gray-700 mb-2">Order Date & Time <span class="text-gray-500 text-xs">(Auto-filled with current date/time)</span></label>
+                    <input type="datetime-local" id="order_date" name="order_date" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
                 </div>
                 
                 <div>
                     <label class="block text-sm font-semibold text-gray-700 mb-2">Select Food Items *</label>
-                    <div class="flex gap-2 mb-3">
-                        <select id="foodSelect" class="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
-                            <option value="">Select a food item</option>
-                            <?php
-                            $menuItems->data_seek(0);
-                            while ($menu = $menuItems->fetch_assoc()): ?>
-                                <option value="<?php echo $menu['id']; ?>" data-price="<?php echo $menu['price']; ?>">
-                                    <?php echo htmlspecialchars($menu['food_name']); ?> - Rs <?php echo number_format($menu['price'], 2); ?>
-                                </option>
-                            <?php endwhile; ?>
-                        </select>
-                        <button type="button" onclick="if(document.getElementById('foodSelect').value) addFoodItem(document.getElementById('foodSelect').value, 1, null, 'full'); document.getElementById('foodSelect').value = '';" class="px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-all">
-                            Add Food
-                        </button>
+                    <div class="relative mb-3">
+                        <div class="relative">
+                            <input 
+                                type="text" 
+                                id="foodSearch" 
+                                placeholder="🔍 Search food items by name..." 
+                                class="w-full px-4 py-3 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                                autocomplete="off"
+                            >
+                            <svg class="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                            </svg>
+                        </div>
+                        <div id="foodSearchResults" class="hidden absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                            <!-- Search results will appear here -->
+                        </div>
                     </div>
                     <div id="foodItemsContainer" class="space-y-2 min-h-[100px] p-3 border border-gray-200 rounded-lg bg-gray-50">
-                        <p class="text-sm text-gray-500 text-center py-4">No food items selected. Click "Add Food" to add items.</p>
+                        <p class="text-sm text-gray-500 text-center py-4">No food items selected. Search and select items to add them.</p>
                     </div>
                 </div>
                 

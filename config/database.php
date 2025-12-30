@@ -147,6 +147,34 @@ function initializeDatabase() {
             role ENUM('staff', 'manager') NOT NULL DEFAULT 'staff',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        )",
+        
+        "CREATE TABLE IF NOT EXISTS regular_customers (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            customer_name VARCHAR(255) NOT NULL,
+            phone VARCHAR(20) NOT NULL,
+            email VARCHAR(255),
+            address TEXT,
+            status ENUM('active', 'inactive') DEFAULT 'active',
+            discount_percentage DECIMAL(5, 2) DEFAULT 0.00,
+            due_amount DECIMAL(10, 2) DEFAULT 0.00,
+            total_amount DECIMAL(10, 2) DEFAULT 0.00,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        )",
+        
+        "CREATE TABLE IF NOT EXISTS customer_transactions (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            customer_id INT NOT NULL,
+            transaction_type ENUM('credit', 'payment', 'order') NOT NULL,
+            amount DECIMAL(10, 2) NOT NULL,
+            description TEXT,
+            order_id INT,
+            reference_number VARCHAR(100),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (customer_id) REFERENCES regular_customers(id) ON DELETE CASCADE,
+            FOREIGN KEY (order_id) REFERENCES order_details(id) ON DELETE SET NULL
         )"
     ];
     
@@ -341,6 +369,34 @@ function initializeDatabase() {
         if (in_array('category', $existingMenuColumns) && in_array('category_id', $existingMenuColumns)) {
             $alterSql = "ALTER TABLE menu DROP COLUMN category";
             $conn->query($alterSql); // Ignore errors
+        }
+    }
+    
+    // Check and update regular_customers table structure
+    $checkRegularCustomersTable = $conn->query("SHOW TABLES LIKE 'regular_customers'");
+    if ($checkRegularCustomersTable && $checkRegularCustomersTable->num_rows > 0) {
+        $regularCustomersColumns = $conn->query("SHOW COLUMNS FROM regular_customers");
+        $existingRegularCustomersColumns = [];
+        while ($col = $regularCustomersColumns->fetch_assoc()) {
+            $existingRegularCustomersColumns[] = $col['Field'];
+        }
+        
+        // Add discount_percentage if it doesn't exist
+        if (!in_array('discount_percentage', $existingRegularCustomersColumns)) {
+            $alterSql = "ALTER TABLE regular_customers ADD COLUMN discount_percentage DECIMAL(5, 2) DEFAULT 0.00 AFTER status";
+            $conn->query($alterSql);
+        }
+        
+        // Add due_amount if it doesn't exist
+        if (!in_array('due_amount', $existingRegularCustomersColumns)) {
+            $alterSql = "ALTER TABLE regular_customers ADD COLUMN due_amount DECIMAL(10, 2) DEFAULT 0.00 AFTER discount_percentage";
+            $conn->query($alterSql);
+        }
+        
+        // Add total_amount if it doesn't exist
+        if (!in_array('total_amount', $existingRegularCustomersColumns)) {
+            $alterSql = "ALTER TABLE regular_customers ADD COLUMN total_amount DECIMAL(10, 2) DEFAULT 0.00 AFTER due_amount";
+            $conn->query($alterSql);
         }
     }
     
