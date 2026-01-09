@@ -46,7 +46,13 @@ $subtotal = 0;
 foreach ($items as $item) {
     $subtotal += isset($item['total']) ? (float)$item['total'] : 0;
 }
-$total = isset($order['total_amount']) ? (float)$order['total_amount'] : $subtotal;
+
+// Get discount information
+$discount_percentage = isset($order['discount_percentage']) ? (float)$order['discount_percentage'] : 0;
+$discount_amount = isset($order['discount_amount']) ? (float)$order['discount_amount'] : 0;
+$discountByPercentage = ($subtotal * $discount_percentage) / 100;
+$totalDiscount = $discountByPercentage + $discount_amount;
+$total = isset($order['total_amount']) ? (float)$order['total_amount'] : max(0, $subtotal - $totalDiscount);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -167,6 +173,25 @@ $total = isset($order['total_amount']) ? (float)$order['total_amount'] : $subtot
                 <span class="font-semibold">Subtotal:</span>
                 <span class="font-semibold">Rs <?php echo number_format($subtotal, 2); ?></span>
             </div>
+            <?php if ($totalDiscount > 0): ?>
+                <div class="flex justify-between text-xs pt-1 text-red-600">
+                    <span class="font-semibold">Discount:</span>
+                    <span class="font-semibold">- Rs <?php echo number_format($totalDiscount, 2); ?></span>
+                </div>
+                <?php if ($discount_percentage > 0 && $discount_amount > 0): ?>
+                    <div class="text-xs text-gray-600 pl-2">
+                        (<?php echo number_format($discount_percentage, 2); ?>% = Rs <?php echo number_format($discountByPercentage, 2); ?> + Fixed: Rs <?php echo number_format($discount_amount, 2); ?>)
+                    </div>
+                <?php elseif ($discount_percentage > 0): ?>
+                    <div class="text-xs text-gray-600 pl-2">
+                        (<?php echo number_format($discount_percentage, 2); ?>% = Rs <?php echo number_format($discountByPercentage, 2); ?>)
+                    </div>
+                <?php elseif ($discount_amount > 0): ?>
+                    <div class="text-xs text-gray-600 pl-2">
+                        (Fixed: Rs <?php echo number_format($discount_amount, 2); ?>)
+                    </div>
+                <?php endif; ?>
+            <?php endif; ?>
             <div class="flex justify-between text-sm border-t-2 border-gray-900 pt-2">
                 <span class="font-bold">TOTAL:</span>
                 <span class="font-bold">Rs <?php echo number_format($total, 2); ?></span>

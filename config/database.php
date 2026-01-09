@@ -80,6 +80,9 @@ function initializeDatabase() {
             check_out_date DATE NOT NULL,
             number_of_guests INT DEFAULT 1,
             total_amount DECIMAL(10, 2) DEFAULT 0.00,
+            payment_status ENUM('pending', 'paid', 'partial', 'cancelled') DEFAULT 'pending',
+            payment_method ENUM('cash', 'card', 'online', 'bank_transfer') DEFAULT 'cash',
+            payment_amount DECIMAL(10, 2) DEFAULT 0.00,
             status ENUM('pending', 'confirmed', 'checked_in', 'checked_out', 'cancelled') DEFAULT 'pending',
             special_requests TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -123,11 +126,13 @@ function initializeDatabase() {
             table_id INT,
             booking_id INT,
             customer_name VARCHAR(255),
+            regular_customer_id INT,
             order_date DATETIME NOT NULL,
             items TEXT NOT NULL,
             subtotal DECIMAL(10, 2) NOT NULL,
             tax DECIMAL(10, 2) DEFAULT 0,
-            discount DECIMAL(10, 2) DEFAULT 0,
+            discount_percentage DECIMAL(5, 2) DEFAULT 0.00,
+            discount_amount DECIMAL(10, 2) DEFAULT 0.00,
             total_amount DECIMAL(10, 2) NOT NULL,
             order_status ENUM('pending', 'completed') DEFAULT 'pending',
             payment_status ENUM('pending', 'paid', 'cancelled') DEFAULT 'pending',
@@ -136,7 +141,8 @@ function initializeDatabase() {
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             FOREIGN KEY (table_id) REFERENCES tables(id) ON DELETE SET NULL,
-            FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE SET NULL
+            FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE SET NULL,
+            FOREIGN KEY (regular_customer_id) REFERENCES regular_customers(id) ON DELETE SET NULL
         )",
         
         "CREATE TABLE IF NOT EXISTS users (
@@ -157,6 +163,7 @@ function initializeDatabase() {
             address TEXT,
             status ENUM('active', 'inactive') DEFAULT 'active',
             discount_percentage DECIMAL(5, 2) DEFAULT 0.00,
+            discount_amount DECIMAL(10, 2) DEFAULT 0.00,
             due_amount DECIMAL(10, 2) DEFAULT 0.00,
             total_amount DECIMAL(10, 2) DEFAULT 0.00,
             notes TEXT,
@@ -266,6 +273,24 @@ function initializeDatabase() {
             $alterSql = "ALTER TABLE bookings MODIFY COLUMN total_amount DECIMAL(10, 2) DEFAULT 0.00";
             $conn->query($alterSql);
         }
+        
+        // Add payment_status if it doesn't exist
+        if (!in_array('payment_status', $existingBookingsColumns)) {
+            $alterSql = "ALTER TABLE bookings ADD COLUMN payment_status ENUM('pending', 'paid', 'partial', 'cancelled') DEFAULT 'pending' AFTER total_amount";
+            $conn->query($alterSql);
+        }
+        
+        // Add payment_method if it doesn't exist
+        if (!in_array('payment_method', $existingBookingsColumns)) {
+            $alterSql = "ALTER TABLE bookings ADD COLUMN payment_method ENUM('cash', 'card', 'online', 'bank_transfer') DEFAULT 'cash' AFTER payment_status";
+            $conn->query($alterSql);
+        }
+        
+        // Add payment_amount if it doesn't exist
+        if (!in_array('payment_amount', $existingBookingsColumns)) {
+            $alterSql = "ALTER TABLE bookings ADD COLUMN payment_amount DECIMAL(10, 2) DEFAULT 0.00 AFTER payment_method";
+            $conn->query($alterSql);
+        }
     }
     
     // Check and update order_details table structure
@@ -302,6 +327,39 @@ function initializeDatabase() {
                 if ($row['Null'] === 'NO') {
                     $alterSql = "ALTER TABLE order_details MODIFY COLUMN customer_name VARCHAR(255) NULL";
                     $conn->query($alterSql);
+                }
+            }
+        }
+        
+        // Add discount_percentage if it doesn't exist
+        if (!in_array('discount_percentage', $existingOrderDetailsColumns)) {
+            $alterSql = "ALTER TABLE order_details ADD COLUMN discount_percentage DECIMAL(5, 2) DEFAULT 0.00 AFTER tax";
+            $conn->query($alterSql);
+        }
+        
+        // Add discount_amount if it doesn't exist (or rename existing discount column)
+        if (!in_array('discount_amount', $existingOrderDetailsColumns)) {
+            if (in_array('discount', $existingOrderDetailsColumns)) {
+                // Rename existing discount column to discount_amount
+                $alterSql = "ALTER TABLE order_details CHANGE COLUMN discount discount_amount DECIMAL(10, 2) DEFAULT 0.00";
+                $conn->query($alterSql);
+            } else {
+                $alterSql = "ALTER TABLE order_details ADD COLUMN discount_amount DECIMAL(10, 2) DEFAULT 0.00 AFTER discount_percentage";
+                $conn->query($alterSql);
+            }
+        }
+        
+        // Add regular_customer_id if it doesn't exist
+        if (!in_array('regular_customer_id', $existingOrderDetailsColumns)) {
+            $alterSql = "ALTER TABLE order_details ADD COLUMN regular_customer_id INT NULL AFTER customer_name";
+            $conn->query($alterSql);
+            // Add foreign key constraint if regular_customers table exists
+            $checkRegularCustomersTable = $conn->query("SHOW TABLES LIKE 'regular_customers'");
+            if ($checkRegularCustomersTable && $checkRegularCustomersTable->num_rows > 0) {
+                $fkCheck = $conn->query("SELECT CONSTRAINT_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'order_details' AND COLUMN_NAME = 'regular_customer_id' AND REFERENCED_TABLE_NAME = 'regular_customers'");
+                if (!$fkCheck || $fkCheck->num_rows == 0) {
+                    $alterSql = "ALTER TABLE order_details ADD CONSTRAINT fk_order_regular_customer FOREIGN KEY (regular_customer_id) REFERENCES regular_customers(id) ON DELETE SET NULL";
+                    $conn->query($alterSql); // Ignore errors if constraint already exists
                 }
             }
         }
@@ -387,9 +445,15 @@ function initializeDatabase() {
             $conn->query($alterSql);
         }
         
+        // Add discount_amount if it doesn't exist
+        if (!in_array('discount_amount', $existingRegularCustomersColumns)) {
+            $alterSql = "ALTER TABLE regular_customers ADD COLUMN discount_amount DECIMAL(10, 2) DEFAULT 0.00 AFTER discount_percentage";
+            $conn->query($alterSql);
+        }
+        
         // Add due_amount if it doesn't exist
         if (!in_array('due_amount', $existingRegularCustomersColumns)) {
-            $alterSql = "ALTER TABLE regular_customers ADD COLUMN due_amount DECIMAL(10, 2) DEFAULT 0.00 AFTER discount_percentage";
+            $alterSql = "ALTER TABLE regular_customers ADD COLUMN due_amount DECIMAL(10, 2) DEFAULT 0.00 AFTER discount_amount";
             $conn->query($alterSql);
         }
         

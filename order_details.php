@@ -21,11 +21,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         if ($_POST['action'] == 'create') {
             $order_number = 'ORD' . date('Ymd') . rand(1000, 9999);
             $table_id = !empty($_POST['table_id']) ? intval($_POST['table_id']) : null;
+            $regular_customer_id = !empty($_POST['regular_customer_id']) ? intval($_POST['regular_customer_id']) : null;
             // Auto-set to current date/time if not provided
             $order_date = !empty(trim($_POST['order_date'] ?? '')) ? trim($_POST['order_date']) : date('Y-m-d H:i:s');
             $order_status = trim($_POST['order_status'] ?? 'pending');
             $payment_status = trim($_POST['payment_status'] ?? 'pending');
             $payment_method = trim($_POST['payment_method'] ?? 'cash');
+            $discount_percentage = floatval($_POST['discount_percentage'] ?? 0);
+            $discount_amount = floatval($_POST['discount_amount'] ?? 0);
             $notes = trim($_POST['notes'] ?? '');
             
             // Process food items
@@ -68,11 +71,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $messageType = 'error';
             } else {
                 $itemsJson = json_encode($items);
-                $total_amount = $subtotal; // Can add tax/discount later if needed
                 
-                $stmt = $conn->prepare("INSERT INTO order_details (order_number, table_id, order_date, items, subtotal, total_amount, order_status, payment_status, payment_method, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                // Calculate discount
+                $discountByPercentage = ($subtotal * $discount_percentage) / 100;
+                $totalDiscount = $discountByPercentage + $discount_amount;
+                $total_amount = max(0, $subtotal - $totalDiscount); // Ensure total doesn't go negative
+                
+                $stmt = $conn->prepare("INSERT INTO order_details (order_number, table_id, regular_customer_id, order_date, items, subtotal, discount_percentage, discount_amount, total_amount, order_status, payment_status, payment_method, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
                 if ($stmt) {
-                    $stmt->bind_param("sissddssss", $order_number, $table_id, $order_date, $itemsJson, $subtotal, $total_amount, $order_status, $payment_status, $payment_method, $notes);
+                    $stmt->bind_param("siissddddssss", $order_number, $table_id, $regular_customer_id, $order_date, $itemsJson, $subtotal, $discount_percentage, $discount_amount, $total_amount, $order_status, $payment_status, $payment_method, $notes);
                     if ($stmt->execute()) {
                         $message = "Order created successfully!";
                         $messageType = 'success';
@@ -93,11 +100,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         } elseif ($_POST['action'] == 'update') {
             $id = intval($_POST['id'] ?? 0);
             $table_id = !empty($_POST['table_id']) ? intval($_POST['table_id']) : null;
+            $regular_customer_id = !empty($_POST['regular_customer_id']) ? intval($_POST['regular_customer_id']) : null;
             // Auto-set to current date/time if not provided
             $order_date = !empty(trim($_POST['order_date'] ?? '')) ? trim($_POST['order_date']) : date('Y-m-d H:i:s');
             $order_status = trim($_POST['order_status'] ?? 'pending');
             $payment_status = trim($_POST['payment_status'] ?? 'pending');
             $payment_method = trim($_POST['payment_method'] ?? 'cash');
+            $discount_percentage = floatval($_POST['discount_percentage'] ?? 0);
+            $discount_amount = floatval($_POST['discount_amount'] ?? 0);
             $notes = trim($_POST['notes'] ?? '');
             
             // Process food items
@@ -140,11 +150,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $messageType = 'error';
             } else {
                 $itemsJson = json_encode($items);
-                $total_amount = $subtotal;
                 
-                $stmt = $conn->prepare("UPDATE order_details SET table_id=?, order_date=?, items=?, subtotal=?, total_amount=?, order_status=?, payment_status=?, payment_method=?, notes=? WHERE id=?");
+                // Calculate discount
+                $discountByPercentage = ($subtotal * $discount_percentage) / 100;
+                $totalDiscount = $discountByPercentage + $discount_amount;
+                $total_amount = max(0, $subtotal - $totalDiscount); // Ensure total doesn't go negative
+                
+                $stmt = $conn->prepare("UPDATE order_details SET table_id=?, regular_customer_id=?, order_date=?, items=?, subtotal=?, discount_percentage=?, discount_amount=?, total_amount=?, order_status=?, payment_status=?, payment_method=?, notes=? WHERE id=?");
                 if ($stmt) {
-                    $stmt->bind_param("issddssssi", $table_id, $order_date, $itemsJson, $subtotal, $total_amount, $order_status, $payment_status, $payment_method, $notes, $id);
+                    $stmt->bind_param("iissddddssssi", $table_id, $regular_customer_id, $order_date, $itemsJson, $subtotal, $discount_percentage, $discount_amount, $total_amount, $order_status, $payment_status, $payment_method, $notes, $id);
                     if ($stmt->execute()) {
                         $message = "Order updated successfully!";
                         $messageType = 'success';
@@ -225,6 +239,12 @@ if (!$tables) {
     die("Error fetching tables: " . $conn->error);
 }
 
+// Fetch regular customers for dropdown
+$regularCustomers = $conn->query("SELECT id, customer_name, phone, discount_percentage, discount_amount FROM regular_customers WHERE status = 'active' ORDER BY customer_name");
+if (!$regularCustomers) {
+    die("Error fetching regular customers: " . $conn->error);
+}
+
 // Fetch menu items for dropdown
 $menuItems = $conn->query("SELECT id, food_name, price FROM menu WHERE status = 'available' ORDER BY food_name");
 if (!$menuItems) {
@@ -244,6 +264,7 @@ $conn->close();
         var openModal, closeModal, deleteRecord, calculateTotal, addFoodItem, removeFoodItem, initFoodSearch;
         var selectedFoods = [];
         var menuData = {};
+        var regularCustomersData = {};
         
         (function() {
             // Load menu data
@@ -254,6 +275,19 @@ $conn->close();
                     id: <?php echo $menu['id']; ?>,
                     name: <?php echo json_encode($menu['food_name']); ?>,
                     price: <?php echo $menu['price']; ?>
+                };
+            <?php endwhile; ?>
+            
+            // Load regular customers data
+            <?php
+            $regularCustomers->data_seek(0);
+            while ($customer = $regularCustomers->fetch_assoc()): ?>
+                regularCustomersData[<?php echo $customer['id']; ?>] = {
+                    id: <?php echo $customer['id']; ?>,
+                    name: <?php echo json_encode($customer['customer_name']); ?>,
+                    phone: <?php echo json_encode($customer['phone']); ?>,
+                    discount_percentage: <?php echo $customer['discount_percentage'] ?? 0; ?>,
+                    discount_amount: <?php echo $customer['discount_amount'] ?? 0; ?>
                 };
             <?php endwhile; ?>
             
@@ -279,6 +313,15 @@ $conn->close();
                 if (action === 'edit' && data) {
                     document.getElementById('formId').value = data.id || '';
                     document.getElementById('table_id').value = data.table_id || '';
+                    document.getElementById('regular_customer_id').value = data.regular_customer_id || '';
+                    
+                    // Set customer search input if customer is selected
+                    if (data.regular_customer_id && regularCustomersData[data.regular_customer_id]) {
+                        var customer = regularCustomersData[data.regular_customer_id];
+                        document.getElementById('regular_customer_search').value = customer.name + ' - ' + customer.phone;
+                    } else {
+                        document.getElementById('regular_customer_search').value = '';
+                    }
                     
                     // Format datetime for input
                     var orderDate = data.order_date ? new Date(data.order_date.replace(' ', 'T')).toISOString().slice(0, 16) : '';
@@ -287,6 +330,8 @@ $conn->close();
                     document.getElementById('order_status').value = data.order_status || 'pending';
                     document.getElementById('payment_status').value = data.payment_status || 'pending';
                     document.getElementById('payment_method').value = data.payment_method || 'cash';
+                    document.getElementById('discount_percentage').value = data.discount_percentage || '0';
+                    document.getElementById('discount_amount').value = data.discount_amount || '0';
                     document.getElementById('notes').value = data.notes || '';
                     
                     // Load existing items
@@ -307,6 +352,10 @@ $conn->close();
                 } else {
                     form.reset();
                     document.getElementById('formId').value = '';
+                    document.getElementById('regular_customer_id').value = '';
+                    document.getElementById('regular_customer_search').value = '';
+                    document.getElementById('discount_percentage').value = '0';
+                    document.getElementById('discount_amount').value = '0';
                     // Always set current date/time for new orders
                     var now = new Date();
                     var year = now.getFullYear();
@@ -420,8 +469,15 @@ $conn->close();
                     }
                 });
                 
+                // Calculate discount
+                var discountPercentage = parseFloat(document.getElementById('discount_percentage').value) || 0;
+                var discountAmount = parseFloat(document.getElementById('discount_amount').value) || 0;
+                var discountByPercentage = (subtotal * discountPercentage) / 100;
+                var totalDiscount = discountByPercentage + discountAmount;
+                var total = Math.max(0, subtotal - totalDiscount);
+                
                 document.getElementById('subtotal').value = subtotal.toFixed(2);
-                document.getElementById('total_amount').value = subtotal.toFixed(2);
+                document.getElementById('total_amount').value = total.toFixed(2);
             };
             
             // Food search functionality
@@ -488,13 +544,114 @@ $conn->close();
                 });
             }
             
+            // Function to apply customer discount when regular customer is selected
+            function applyCustomerDiscount(customerId) {
+                if (customerId && regularCustomersData[customerId]) {
+                    var customer = regularCustomersData[customerId];
+                    var discountPercentage = parseFloat(customer.discount_percentage) || 0;
+                    var discountAmount = parseFloat(customer.discount_amount) || 0;
+                    
+                    // Only auto-fill if discount fields are currently 0 (to avoid overwriting manual entries)
+                    var currentPercentage = parseFloat(document.getElementById('discount_percentage').value) || 0;
+                    var currentAmount = parseFloat(document.getElementById('discount_amount').value) || 0;
+                    
+                    if (currentPercentage === 0 && currentAmount === 0) {
+                        document.getElementById('discount_percentage').value = discountPercentage;
+                        document.getElementById('discount_amount').value = discountAmount;
+                    } else {
+                        // Ask user if they want to apply customer discount
+                        if (confirm('Do you want to apply the regular customer discount? This will replace your current discount values.')) {
+                            document.getElementById('discount_percentage').value = discountPercentage;
+                            document.getElementById('discount_amount').value = discountAmount;
+                        }
+                    }
+                    calculateTotal();
+                }
+            }
+            
+            // Regular customer search functionality
+            var regularCustomerSearchInput = null;
+            var regularCustomerSearchResults = null;
+            
+            function initRegularCustomerSearch() {
+                regularCustomerSearchInput = document.getElementById('regular_customer_search');
+                regularCustomerSearchResults = document.getElementById('regularCustomerSearchResults');
+                
+                if (!regularCustomerSearchInput || !regularCustomerSearchResults) return;
+                
+                regularCustomerSearchInput.addEventListener('input', function() {
+                    var query = this.value.trim().toLowerCase();
+                    
+                    if (query.length === 0) {
+                        regularCustomerSearchResults.classList.add('hidden');
+                        return;
+                    }
+                    
+                    var results = [];
+                    for (var customerId in regularCustomersData) {
+                        var customer = regularCustomersData[customerId];
+                        var name = customer.name.toLowerCase();
+                        var phone = customer.phone.toLowerCase();
+                        
+                        if (name.includes(query) || phone.includes(query)) {
+                            results.push(customer);
+                        }
+                    }
+                    
+                    if (results.length === 0) {
+                        regularCustomerSearchResults.innerHTML = '<div class="p-3 text-sm text-gray-500 text-center">No customers found</div>';
+                        regularCustomerSearchResults.classList.remove('hidden');
+                    } else {
+                        regularCustomerSearchResults.innerHTML = '';
+                        results.forEach(function(customer) {
+                            var itemDiv = document.createElement('div');
+                            itemDiv.className = 'p-3 hover:bg-indigo-50 cursor-pointer border-b border-gray-200';
+                            itemDiv.innerHTML = `
+                                <div class="font-medium text-gray-900">${customer.name}</div>
+                                <div class="text-xs text-gray-600">${customer.phone}</div>
+                                ${(customer.discount_percentage > 0 || customer.discount_amount > 0) ? 
+                                    '<div class="text-xs text-indigo-600 mt-1">Discount: ' + 
+                                    (customer.discount_percentage > 0 ? customer.discount_percentage + '%' : '') + 
+                                    (customer.discount_percentage > 0 && customer.discount_amount > 0 ? ' + ' : '') + 
+                                    (customer.discount_amount > 0 ? 'Rs ' + parseFloat(customer.discount_amount).toFixed(2) : '') + 
+                                    '</div>' : ''}
+                            `;
+                            itemDiv.addEventListener('click', function() {
+                                document.getElementById('regular_customer_id').value = customer.id;
+                                regularCustomerSearchInput.value = customer.name + ' - ' + customer.phone;
+                                regularCustomerSearchResults.classList.add('hidden');
+                                applyCustomerDiscount(customer.id);
+                            });
+                            regularCustomerSearchResults.appendChild(itemDiv);
+                        });
+                        regularCustomerSearchResults.classList.remove('hidden');
+                    }
+                });
+                
+                // Hide results when clicking outside
+                document.addEventListener('click', function(e) {
+                    if (!regularCustomerSearchInput.contains(e.target) && !regularCustomerSearchResults.contains(e.target)) {
+                        regularCustomerSearchResults.classList.add('hidden');
+                    }
+                });
+            }
+            
+            // Make functions globally accessible
+            window.applyCustomerDiscount = applyCustomerDiscount;
+            
             // Initialize search when DOM is ready
             if (document.readyState === 'loading') {
                 document.addEventListener('DOMContentLoaded', function() {
-                    setTimeout(initFoodSearch, 200);
+                    setTimeout(function() {
+                        initFoodSearch();
+                        initRegularCustomerSearch();
+                    }, 200);
                 });
             } else {
-                setTimeout(initFoodSearch, 200);
+                setTimeout(function() {
+                    initFoodSearch();
+                    initRegularCustomerSearch();
+                }, 200);
             }
         })();
     </script>
@@ -694,16 +851,41 @@ $conn->close();
                 <input type="hidden" name="action" id="formAction" value="create">
                 <input type="hidden" name="id" id="formId">
                 
-                <div>
-                    <label for="table_id" class="block text-sm font-semibold text-gray-700 mb-2">Table Number</label>
-                    <select id="table_id" name="table_id" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
-                        <option value="">Select Table (Optional)</option>
-                        <?php
-                        $tables->data_seek(0);
-                        while ($table = $tables->fetch_assoc()): ?>
-                            <option value="<?php echo $table['id']; ?>"><?php echo htmlspecialchars($table['table_number']); ?></option>
-                        <?php endwhile; ?>
-                    </select>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="table_id" class="block text-sm font-semibold text-gray-700 mb-2">Table Number</label>
+                        <select id="table_id" name="table_id" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
+                            <option value="">Select Table (Optional)</option>
+                            <?php
+                            $tables->data_seek(0);
+                            while ($table = $tables->fetch_assoc()): ?>
+                                <option value="<?php echo $table['id']; ?>"><?php echo htmlspecialchars($table['table_number']); ?></option>
+                            <?php endwhile; ?>
+                        </select>
+                    </div>
+                    
+                    <div class="relative">
+                        <label for="regular_customer_search" class="block text-sm font-semibold text-gray-700 mb-2">
+                            Regular Customer <span class="text-gray-500 text-xs">(Optional - Auto-fills discount if selected)</span>
+                        </label>
+                        <div class="relative">
+                            <input 
+                                type="text" 
+                                id="regular_customer_search" 
+                                placeholder="🔍 Search regular customer by name or phone..." 
+                                class="w-full px-4 py-3 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                                autocomplete="off"
+                            >
+                            <input type="hidden" id="regular_customer_id" name="regular_customer_id" value="">
+                            <svg class="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                            </svg>
+                        </div>
+                        <div id="regularCustomerSearchResults" class="hidden absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                            <!-- Search results will appear here -->
+                        </div>
+                        <p class="text-xs text-gray-500 mt-1">Search and select a regular customer to auto-fill their discount, but you can still modify it manually below.</p>
+                    </div>
                 </div>
                 
                 <div>
@@ -744,6 +926,54 @@ $conn->close();
                     <div>
                         <label for="total_amount" class="block text-sm font-semibold text-gray-700 mb-2">Total Amount</label>
                         <input type="number" id="total_amount" name="total_amount" step="0.01" readonly class="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-100 outline-none" value="0.00">
+                    </div>
+                </div>
+                
+                <div class="border-t border-gray-200 pt-4 mt-4">
+                    <h4 class="text-lg font-semibold text-gray-800 mb-3">Discount (Available for All Customers)</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label for="discount_percentage" class="block text-sm font-semibold text-gray-700 mb-2">
+                                Discount Percentage <span class="text-gray-500 text-xs">(0-100%)</span>
+                            </label>
+                            <input 
+                                type="number" 
+                                id="discount_percentage" 
+                                name="discount_percentage" 
+                                min="0" 
+                                max="100" 
+                                step="0.01" 
+                                value="0" 
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none" 
+                                onchange="calculateTotal()" 
+                                placeholder="Enter discount percentage (e.g., 10 for 10%)"
+                            >
+                            <p class="text-xs text-gray-500 mt-1">Apply percentage discount on subtotal</p>
+                        </div>
+                        
+                        <div>
+                            <label for="discount_amount" class="block text-sm font-semibold text-gray-700 mb-2">
+                                Discount Amount <span class="text-gray-500 text-xs">(Fixed amount in Rs)</span>
+                            </label>
+                            <input 
+                                type="number" 
+                                id="discount_amount" 
+                                name="discount_amount" 
+                                min="0" 
+                                step="0.01" 
+                                value="0" 
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none" 
+                                onchange="calculateTotal()" 
+                                placeholder="Enter fixed discount amount (e.g., 50 for Rs 50)"
+                            >
+                            <p class="text-xs text-gray-500 mt-1">Apply fixed amount discount</p>
+                        </div>
+                    </div>
+                    <div class="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                        <p class="text-xs text-blue-800">
+                            <strong>Note:</strong> You can use both percentage and fixed amount discounts together. 
+                            If a regular customer is selected, their discount will be auto-filled, but you can modify it manually for any customer.
+                        </p>
                     </div>
                 </div>
                 

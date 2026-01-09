@@ -27,18 +27,28 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $check_out_datetime = trim($_POST['check_out_datetime'] ?? '');
             $status = trim($_POST['status'] ?? '');
             $details = trim($_POST['details'] ?? '');
+            $payment_status = trim($_POST['payment_status'] ?? 'pending');
+            $payment_method = trim($_POST['payment_method'] ?? 'cash');
+            $payment_amount = floatval($_POST['payment_amount'] ?? 0);
+            $total_amount = floatval($_POST['total_amount'] ?? 0);
             
             if (empty($customer_name) || empty($customer_phone) || $room_id <= 0 || empty($check_in_datetime) || empty($check_out_datetime) || empty($status)) {
                 $message = "Please fill all required fields correctly!";
                 $messageType = 'error';
+            } elseif ($payment_amount < 0) {
+                $message = "Payment amount cannot be negative!";
+                $messageType = 'error';
+            } elseif ($payment_amount > $total_amount) {
+                $message = "Payment amount cannot exceed total amount!";
+                $messageType = 'error';
             } else {
-                $stmt = $conn->prepare("INSERT INTO bookings (booking_reference, customer_name, customer_phone, room_id, check_in_date, check_out_date, status, special_requests, room_type, number_of_guests, total_amount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'normal_room', 1, 0.00)");
+                $stmt = $conn->prepare("INSERT INTO bookings (booking_reference, customer_name, customer_phone, room_id, check_in_date, check_out_date, status, special_requests, room_type, number_of_guests, total_amount, payment_status, payment_method, payment_amount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'normal_room', 1, ?, ?, ?, ?)");
                 if ($stmt) {
                     // Convert datetime to date format for database
                     $check_in_date = date('Y-m-d', strtotime($check_in_datetime));
                     $check_out_date = date('Y-m-d', strtotime($check_out_datetime));
                     
-                    $stmt->bind_param("sssissss", $booking_reference, $customer_name, $customer_phone, $room_id, $check_in_date, $check_out_date, $status, $details);
+                    $stmt->bind_param("sssissssdssd", $booking_reference, $customer_name, $customer_phone, $room_id, $check_in_date, $check_out_date, $status, $details, $total_amount, $payment_status, $payment_method, $payment_amount);
                     if ($stmt->execute()) {
                         $message = "Booking created successfully!";
                         $messageType = 'success';
@@ -65,18 +75,28 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $check_out_datetime = trim($_POST['check_out_datetime'] ?? '');
             $status = trim($_POST['status'] ?? '');
             $details = trim($_POST['details'] ?? '');
+            $payment_status = trim($_POST['payment_status'] ?? 'pending');
+            $payment_method = trim($_POST['payment_method'] ?? 'cash');
+            $payment_amount = floatval($_POST['payment_amount'] ?? 0);
+            $total_amount = floatval($_POST['total_amount'] ?? 0);
             
             if (empty($customer_name) || empty($customer_phone) || $room_id <= 0 || empty($check_in_datetime) || empty($check_out_datetime) || empty($status) || $id <= 0) {
                 $message = "Please fill all required fields correctly!";
+                $messageType = 'error';
+            } elseif ($payment_amount < 0) {
+                $message = "Payment amount cannot be negative!";
+                $messageType = 'error';
+            } elseif ($payment_amount > $total_amount) {
+                $message = "Payment amount cannot exceed total amount!";
                 $messageType = 'error';
             } else {
                 // Convert datetime to date format for database
                 $check_in_date = date('Y-m-d', strtotime($check_in_datetime));
                 $check_out_date = date('Y-m-d', strtotime($check_out_datetime));
                 
-                $stmt = $conn->prepare("UPDATE bookings SET customer_name=?, customer_phone=?, room_id=?, check_in_date=?, check_out_date=?, status=?, special_requests=? WHERE id=?");
+                $stmt = $conn->prepare("UPDATE bookings SET customer_name=?, customer_phone=?, room_id=?, check_in_date=?, check_out_date=?, status=?, special_requests=?, total_amount=?, payment_status=?, payment_method=?, payment_amount=? WHERE id=?");
                 if ($stmt) {
-                    $stmt->bind_param("ssissssi", $customer_name, $customer_phone, $room_id, $check_in_date, $check_out_date, $status, $details, $id);
+                    $stmt->bind_param("ssissssdssdi", $customer_name, $customer_phone, $room_id, $check_in_date, $check_out_date, $status, $details, $total_amount, $payment_status, $payment_method, $payment_amount, $id);
                     if ($stmt->execute()) {
                         $message = "Booking updated successfully!";
                         $messageType = 'success';
@@ -184,10 +204,18 @@ $conn->close();
                     document.getElementById('check_in_datetime').value = checkInDate;
                     document.getElementById('check_out_datetime').value = checkOutDate;
                     document.getElementById('status').value = data.status || '';
+                    document.getElementById('total_amount').value = data.total_amount || '0';
+                    document.getElementById('payment_status').value = data.payment_status || 'pending';
+                    document.getElementById('payment_method').value = data.payment_method || 'cash';
+                    document.getElementById('payment_amount').value = data.payment_amount || '0';
                     document.getElementById('details').value = data.special_requests || '';
                 } else {
                     form.reset();
                     document.getElementById('formId').value = '';
+                    document.getElementById('total_amount').value = '0';
+                    document.getElementById('payment_status').value = 'pending';
+                    document.getElementById('payment_method').value = 'cash';
+                    document.getElementById('payment_amount').value = '0';
                 }
                 
                 modal.classList.remove('hidden');
@@ -240,6 +268,8 @@ $conn->close();
                                 <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Room</th>
                                 <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Check In</th>
                                 <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Check Out</th>
+                                <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Total Amount</th>
+                                <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Payment</th>
                                 <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Status</th>
                                 <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Actions</th>
                             </tr>
@@ -264,6 +294,29 @@ $conn->close();
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                                     <?php echo $row['check_out_date'] ? date('M d, Y', strtotime($row['check_out_date'])) : 'N/A'; ?>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">
+                                    Rs <?php echo number_format($row['total_amount'] ?? 0, 2); ?>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <?php
+                                    $paymentStatusClass = [
+                                        'pending' => 'bg-yellow-100 text-yellow-800',
+                                        'paid' => 'bg-green-100 text-green-800',
+                                        'partial' => 'bg-orange-100 text-orange-800',
+                                        'cancelled' => 'bg-red-100 text-red-800'
+                                    ];
+                                    $paymentStatus = $row['payment_status'] ?? 'pending';
+                                    $paymentClass = $paymentStatusClass[$paymentStatus] ?? 'bg-gray-100 text-gray-800';
+                                    ?>
+                                    <div class="flex flex-col gap-1">
+                                        <span class="px-2 py-1 rounded-full text-xs font-semibold capitalize <?php echo $paymentClass; ?>">
+                                            <?php echo $paymentStatus; ?>
+                                        </span>
+                                        <span class="text-xs text-gray-600">
+                                            <?php echo htmlspecialchars($row['payment_method'] ?? 'N/A'); ?> - Rs <?php echo number_format($row['payment_amount'] ?? 0, 2); ?>
+                                        </span>
+                                    </div>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap">
                                     <?php
@@ -354,6 +407,42 @@ $conn->close();
                         <option value="checked_out">Checked Out</option>
                         <option value="cancelled">Cancelled</option>
                     </select>
+                </div>
+                
+                <div class="border-t border-gray-200 pt-4 mt-4">
+                    <h4 class="text-lg font-semibold text-gray-800 mb-3">Payment Information</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                            <label for="total_amount" class="block text-sm font-semibold text-gray-700 mb-2">Total Amount (Rs) *</label>
+                            <input type="number" id="total_amount" name="total_amount" step="0.01" min="0" value="0" required class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none" placeholder="0.00">
+                        </div>
+                        
+                        <div>
+                            <label for="payment_status" class="block text-sm font-semibold text-gray-700 mb-2">Payment Status *</label>
+                            <select id="payment_status" name="payment_status" required class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
+                                <option value="pending">Pending</option>
+                                <option value="paid">Paid</option>
+                                <option value="partial">Partial</option>
+                                <option value="cancelled">Cancelled</option>
+                            </select>
+                        </div>
+                        
+                        <div>
+                            <label for="payment_method" class="block text-sm font-semibold text-gray-700 mb-2">Payment Method *</label>
+                            <select id="payment_method" name="payment_method" required class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
+                                <option value="cash">Cash</option>
+                                <option value="card">Card</option>
+                                <option value="online">Online</option>
+                                <option value="bank_transfer">Bank Transfer</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-4">
+                        <label for="payment_amount" class="block text-sm font-semibold text-gray-700 mb-2">Payment Amount (Rs) *</label>
+                        <input type="number" id="payment_amount" name="payment_amount" step="0.01" min="0" value="0" required class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none" placeholder="0.00">
+                        <p class="text-xs text-gray-500 mt-1">Enter the amount paid. For partial payments, enter the amount received.</p>
+                    </div>
                 </div>
                 
                 <div>

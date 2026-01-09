@@ -25,6 +25,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $address = trim($_POST['address'] ?? '');
             $status = trim($_POST['status'] ?? 'active');
             $discount_percentage = floatval($_POST['discount_percentage'] ?? 0);
+            $discount_amount = floatval($_POST['discount_amount'] ?? 0);
             $notes = trim($_POST['notes'] ?? '');
             
             if (empty($customer_name) || empty($phone)) {
@@ -35,6 +36,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $messageType = 'error';
             } elseif ($discount_percentage < 0 || $discount_percentage > 100) {
                 $message = "Discount percentage must be between 0 and 100!";
+                $messageType = 'error';
+            } elseif ($discount_amount < 0) {
+                $message = "Discount amount cannot be negative!";
                 $messageType = 'error';
             } else {
                 // Check if phone already exists
@@ -49,9 +53,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     $checkStmt->close();
                 } else {
                     $checkStmt->close();
-                    $stmt = $conn->prepare("INSERT INTO regular_customers (customer_name, phone, email, address, status, discount_percentage, notes) VALUES (?, ?, ?, ?, ?, ?, ?)");
+                    $stmt = $conn->prepare("INSERT INTO regular_customers (customer_name, phone, email, address, status, discount_percentage, discount_amount, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
                     if ($stmt) {
-                        $stmt->bind_param("sssssds", $customer_name, $phone, $email, $address, $status, $discount_percentage, $notes);
+                        $stmt->bind_param("sssssdds", $customer_name, $phone, $email, $address, $status, $discount_percentage, $discount_amount, $notes);
                         if ($stmt->execute()) {
                             $message = "Regular customer created successfully!";
                             $messageType = 'success';
@@ -78,6 +82,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $address = trim($_POST['address'] ?? '');
             $status = trim($_POST['status'] ?? 'active');
             $discount_percentage = floatval($_POST['discount_percentage'] ?? 0);
+            $discount_amount = floatval($_POST['discount_amount'] ?? 0);
             $notes = trim($_POST['notes'] ?? '');
             
             if (empty($customer_name) || empty($phone) || $id <= 0) {
@@ -88,6 +93,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $messageType = 'error';
             } elseif ($discount_percentage < 0 || $discount_percentage > 100) {
                 $message = "Discount percentage must be between 0 and 100!";
+                $messageType = 'error';
+            } elseif ($discount_amount < 0) {
+                $message = "Discount amount cannot be negative!";
                 $messageType = 'error';
             } else {
                 // Check if phone already exists for other customers
@@ -102,9 +110,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     $checkStmt->close();
                 } else {
                     $checkStmt->close();
-                    $stmt = $conn->prepare("UPDATE regular_customers SET customer_name=?, phone=?, email=?, address=?, status=?, discount_percentage=?, notes=? WHERE id=?");
+                    $stmt = $conn->prepare("UPDATE regular_customers SET customer_name=?, phone=?, email=?, address=?, status=?, discount_percentage=?, discount_amount=?, notes=? WHERE id=?");
                     if ($stmt) {
-                        $stmt->bind_param("sssssdsi", $customer_name, $phone, $email, $address, $status, $discount_percentage, $notes, $id);
+                        $stmt->bind_param("sssssddsi", $customer_name, $phone, $email, $address, $status, $discount_percentage, $discount_amount, $notes, $id);
                         if ($stmt->execute()) {
                             $message = "Regular customer updated successfully!";
                             $messageType = 'success';
@@ -226,7 +234,7 @@ if (isset($_GET['msg'])) {
 }
 
 // Fetch all regular customers with amounts
-$customers = $conn->query("SELECT id, customer_name, phone, email, address, status, discount_percentage, due_amount, total_amount, notes, created_at FROM regular_customers ORDER BY created_at DESC");
+$customers = $conn->query("SELECT id, customer_name, phone, email, address, status, discount_percentage, discount_amount, due_amount, total_amount, notes, created_at FROM regular_customers ORDER BY created_at DESC");
 if (!$customers) {
     die("Error fetching customers: " . $conn->error);
 }
@@ -280,12 +288,14 @@ $conn->close();
                     document.getElementById('address').value = data.address || '';
                     document.getElementById('status').value = data.status || 'active';
                     document.getElementById('discount_percentage').value = data.discount_percentage || '0';
+                    document.getElementById('discount_amount').value = data.discount_amount || '0';
                     document.getElementById('notes').value = data.notes || '';
                 } else {
                     form.reset();
                     document.getElementById('formId').value = '';
                     document.getElementById('status').value = 'active';
                     document.getElementById('discount_percentage').value = '0';
+                    document.getElementById('discount_amount').value = '0';
                 }
                 
                 modal.classList.remove('hidden');
@@ -402,6 +412,7 @@ $conn->close();
                                     <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Phone</th>
                                     <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Email</th>
                                     <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Discount %</th>
+                                    <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Discount Amount</th>
                                     <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Due Amount</th>
                                     <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Total Amount</th>
                                     <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Status</th>
@@ -418,6 +429,9 @@ $conn->close();
                                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600"><?php echo htmlspecialchars($row['email'] ?: 'N/A'); ?></td>
                                         <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-indigo-600">
                                             <?php echo number_format($row['discount_percentage'] ?? 0, 2); ?>%
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-purple-600">
+                                            Rs <?php echo number_format($row['discount_amount'] ?? 0, 2); ?>
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold <?php echo ($row['due_amount'] ?? 0) > 0 ? 'text-red-600' : 'text-green-600'; ?>">
                                             Rs <?php echo number_format($row['due_amount'] ?? 0, 2); ?>
@@ -448,7 +462,7 @@ $conn->close();
                                     <?php endwhile; ?>
                                 <?php else: ?>
                                     <tr>
-                                        <td colspan="9" class="px-6 py-8 text-center text-gray-500">
+                                        <td colspan="10" class="px-6 py-8 text-center text-gray-500">
                                             No regular customers found. Click "Add New Customer" to create one.
                                         </td>
                                     </tr>
@@ -565,6 +579,22 @@ $conn->close();
                             value="0"
                             class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
                             placeholder="Enter discount percentage (e.g., 10 for 10%)"
+                        >
+                    </div>
+                    
+                    <div>
+                        <label for="discount_amount" class="block text-sm font-medium text-gray-700 mb-2">
+                            Discount Amount <span class="text-gray-500 text-xs">(Fixed amount in Rs)</span>
+                        </label>
+                        <input 
+                            type="number" 
+                            id="discount_amount" 
+                            name="discount_amount" 
+                            min="0" 
+                            step="0.01"
+                            value="0"
+                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
+                            placeholder="Enter fixed discount amount (e.g., 50 for Rs 50)"
                         >
                     </div>
                 </div>
