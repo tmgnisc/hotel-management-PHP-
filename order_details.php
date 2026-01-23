@@ -1030,17 +1030,8 @@ $conn->close();
 
     <script src="assets/js/main.js"></script>
     <script>
-        // Modal click outside to close
-        document.addEventListener('DOMContentLoaded', function() {
-            var modal = document.getElementById('modal');
-            if (modal) {
-                modal.addEventListener('click', function(e) {
-                    if (e.target === this) {
-                        closeModal();
-                    }
-                });
-            }
-        });
+        // Modal can only be closed via the close button (X) or Cancel button
+        // Clicking outside the modal will NOT close it
     </script>
 </body>
 </html>

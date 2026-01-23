@@ -357,17 +357,8 @@ $conn->close();
                 }
             };
             
-            // Close modal when clicking outside
-            window.onclick = function(event) {
-                var modal = document.getElementById('modal');
-                var transactionModal = document.getElementById('transactionModal');
-                if (event.target == modal) {
-                    closeModal();
-                }
-                if (event.target == transactionModal) {
-                    closeTransactionModal();
-                }
-            };
+            // Modal can only be closed via the close button (X) or Cancel button
+            // Clicking outside the modal will NOT close it
         })();
     </script>
 </head>

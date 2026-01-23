@@ -207,12 +207,8 @@ $conn->close();
                 }
             };
             
-            window.onclick = function(event) {
-                var modal = document.getElementById('modal');
-                if (event.target == modal) {
-                    closeModal();
-                }
-            };
+            // Modal can only be closed via the close button (X) or Cancel button
+            // Clicking outside the modal will NOT close it
         })();
     </script>
 </head>
@@ -377,6 +373,8 @@ $conn->close();
     <script src="assets/js/main.js"></script>
 </body>
 </html>
+
+
 
 
 

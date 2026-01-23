@@ -290,15 +290,8 @@ $conn->close();
                 });
             });
             
-            // Modal click outside to close
-            const modal = document.getElementById('modal');
-            if (modal) {
-                modal.addEventListener('click', function(e) {
-                    if (e.target === this) {
-                        closeModal();
-                    }
-                });
-            }
+            // Modal can only be closed via the close button (X) or Cancel button
+            // Clicking outside the modal will NOT close it
         });
     </script>
 </body>

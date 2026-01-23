@@ -470,17 +470,10 @@ $conn->close();
 
     <script src="assets/js/main.js"></script>
     <script>
-        // Modal click outside to close
+        // Modal can only be closed via the close button (X) or Cancel button
+        // Clicking outside the modal will NOT close it
+        
         document.addEventListener('DOMContentLoaded', function() {
-            var modal = document.getElementById('modal');
-            if (modal) {
-                modal.addEventListener('click', function(e) {
-                    if (e.target === this) {
-                        closeModal();
-                    }
-                });
-            }
-            
             // Validate check-out date is after check-in date
             var checkInInput = document.getElementById('check_in_datetime');
             var checkOutInput = document.getElementById('check_out_datetime');

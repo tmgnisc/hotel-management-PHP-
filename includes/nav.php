@@ -59,6 +59,10 @@ $current_page = basename($_SERVER['PHP_SELF']);
             <span class="mr-3">👥</span>
             <span class="font-medium">Users</span>
         </a>
+        <a href="profile.php" class="flex items-center px-4 py-3 rounded-lg transition-all duration-200 <?php echo ($current_page == 'profile.php') ? 'bg-indigo-600 text-white shadow-lg' : 'text-gray-300 hover:bg-gray-800 hover:text-white'; ?>">
+            <span class="mr-3">👤</span>
+            <span class="font-medium">Profile</span>
+        </a>
     </nav>
 </aside>
 
@@ -137,6 +141,11 @@ $current_page = basename($_SERVER['PHP_SELF']);
         <li>
             <a href="users.php" class="flex items-center px-4 py-3 rounded-lg transition-all <?php echo ($current_page == 'users.php') ? 'bg-indigo-600 text-white' : 'text-gray-300 hover:bg-gray-800'; ?>">
                 Users
+            </a>
+        </li>
+        <li>
+            <a href="profile.php" class="flex items-center px-4 py-3 rounded-lg transition-all <?php echo ($current_page == 'profile.php') ? 'bg-indigo-600 text-white' : 'text-gray-300 hover:bg-gray-800'; ?>">
+                Profile
             </a>
         </li>
     </ul>
