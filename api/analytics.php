@@ -87,12 +87,15 @@ $summaryQuery = "
     SELECT 
         COUNT(*) as total_orders,
         COALESCE(SUM(CASE WHEN order_status = 'completed' AND payment_status = 'paid' THEN total_amount ELSE 0 END), 0) as total_revenue,
+        COALESCE(SUM(CASE WHEN order_status = 'completed' AND payment_status = 'paid' AND payment_method = 'cash' THEN total_amount ELSE 0 END), 0) as cash_revenue,
+        COALESCE(SUM(CASE WHEN order_status = 'completed' AND payment_status = 'paid' AND payment_method = 'online' THEN total_amount ELSE 0 END), 0) as online_revenue,
+        COALESCE(SUM(CASE WHEN order_status = 'completed' AND payment_status = 'paid' AND payment_method = 'card' THEN total_amount ELSE 0 END), 0) as card_revenue,
         COUNT(DISTINCT DATE(order_date)) as active_days
     FROM order_details 
     WHERE " . $date_condition . "
 ";
 $summaryResult = $conn->query($summaryQuery);
-$summary = $summaryResult ? $summaryResult->fetch_assoc() : ['total_orders' => 0, 'total_revenue' => 0, 'active_days' => 0];
+$summary = $summaryResult ? $summaryResult->fetch_assoc() : ['total_orders' => 0, 'total_revenue' => 0, 'cash_revenue' => 0, 'online_revenue' => 0, 'card_revenue' => 0, 'active_days' => 0];
 
 // Get bookings summary
 $bookingsSummaryQuery = "
@@ -136,6 +139,9 @@ echo json_encode([
     'summary' => [
         'total_orders' => (int)$summary['total_orders'],
         'total_revenue' => (float)$summary['total_revenue'],
+        'cash_revenue' => (float)$summary['cash_revenue'],
+        'online_revenue' => (float)$summary['online_revenue'],
+        'card_revenue' => (float)$summary['card_revenue'],
         'total_bookings' => (int)$bookingsSummary['total_bookings'],
         'active_days' => (int)$summary['active_days'],
         'avg_orders_per_day' => $summary['active_days'] > 0 ? round($summary['total_orders'] / $summary['active_days'], 2) : 0,
