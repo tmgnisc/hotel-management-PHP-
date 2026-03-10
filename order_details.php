@@ -454,18 +454,30 @@ $conn->close();
             calculateTotal = function() {
                 var subtotal = 0;
                 var foodItems = document.querySelectorAll('.food-item');
+                var billItems = [];
                 
                 foodItems.forEach(function(item) {
                     var qtyInput = item.querySelector('input[type="number"]');
+                    if (!qtyInput) return;
+                    
                     var foodId = qtyInput.name.replace('qty_', '');
                     var qty = parseInt(qtyInput.value) || 0;
                     var portionSelect = item.querySelector('.portion-select');
                     var portion = portionSelect ? portionSelect.value : 'full';
                     
-                    if (menuData[foodId]) {
+                    if (menuData[foodId] && qty > 0) {
                         var basePrice = menuData[foodId].price;
                         var unitPrice = portion === 'half' ? (basePrice / 2) : basePrice;
-                        subtotal += unitPrice * qty;
+                        var itemTotal = unitPrice * qty;
+                        subtotal += itemTotal;
+                        
+                        billItems.push({
+                            name: menuData[foodId].name,
+                            portion: portion,
+                            qty: qty,
+                            unitPrice: unitPrice,
+                            total: itemTotal
+                        });
                     }
                 });
                 
@@ -476,8 +488,53 @@ $conn->close();
                 var totalDiscount = discountByPercentage + discountAmount;
                 var total = Math.max(0, subtotal - totalDiscount);
                 
+                // Update numeric fields
                 document.getElementById('subtotal').value = subtotal.toFixed(2);
                 document.getElementById('total_amount').value = total.toFixed(2);
+                
+                // Update visual bill summary
+                var billSummaryItemsEl = document.getElementById('billSummaryItems');
+                var billSummaryEmptyEl = document.getElementById('billSummaryEmpty');
+                var billGrandTotalEl = document.getElementById('billGrandTotal');
+                
+                if (billSummaryItemsEl && billGrandTotalEl) {
+                    billSummaryItemsEl.innerHTML = '';
+                    
+                    if (billItems.length === 0) {
+                        if (billSummaryEmptyEl) {
+                            billSummaryEmptyEl.classList.remove('hidden');
+                        }
+                        billGrandTotalEl.textContent = 'Rs 0.00';
+                    } else {
+                        if (billSummaryEmptyEl) {
+                            billSummaryEmptyEl.classList.add('hidden');
+                        }
+                        
+                        billItems.forEach(function(item) {
+                            var row = document.createElement('div');
+                            row.className = 'flex items-center justify-between py-1 text-sm';
+                            
+                            var labelParts = [item.name];
+                            if (item.portion === 'half') {
+                                labelParts.push('(Half)');
+                            }
+                            labelParts.push('(x' + item.qty + ')');
+                            
+                            row.innerHTML = `
+                                <div class="text-gray-800">
+                                    ${labelParts.join(' ')}
+                                </div>
+                                <div class="font-semibold text-gray-900">
+                                    Rs ${item.total.toFixed(2)}
+                                </div>
+                            `;
+                            
+                            billSummaryItemsEl.appendChild(row);
+                        });
+                        
+                        billGrandTotalEl.textContent = 'Rs ' + total.toFixed(2);
+                    }
+                }
             };
             
             // Food search functionality
@@ -926,6 +983,22 @@ $conn->close();
                     <div>
                         <label for="total_amount" class="block text-sm font-semibold text-gray-700 mb-2">Total Amount</label>
                         <input type="number" id="total_amount" name="total_amount" step="0.01" readonly class="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-100 outline-none" value="0.00">
+                    </div>
+                </div>
+
+                <div class="border border-gray-200 rounded-lg mt-4">
+                    <div class="px-4 py-2 bg-gray-100 border-b border-gray-200 rounded-t-lg">
+                        <h4 class="text-sm font-semibold text-gray-800">Current Bill</h4>
+                    </div>
+                    <div class="p-4 space-y-2">
+                        <div id="billSummaryEmpty" class="text-sm text-gray-500 text-center">
+                            No items added yet. Add food items to see the bill details here.
+                        </div>
+                        <div id="billSummaryItems" class="space-y-1"></div>
+                        <div class="border-t border-dashed border-gray-300 mt-2 pt-2 flex items-center justify-between text-sm font-semibold text-gray-900">
+                            <span>Grand Total</span>
+                            <span id="billGrandTotal">Rs 0.00</span>
+                        </div>
                     </div>
                 </div>
                 
