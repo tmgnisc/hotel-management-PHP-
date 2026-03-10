@@ -2,7 +2,7 @@
 // Database configuration
 define('DB_HOST', 'localhost');
 define('DB_USER', 'root');
-define('DB_PASS', '');
+define('DB_PASS', 'admin');
 define('DB_NAME', 'hotel_management');
 
 // Create connection
@@ -120,6 +120,22 @@ function initializeDatabase() {
             FOREIGN KEY (subcategory_id) REFERENCES subcategories(id) ON DELETE SET NULL
         )",
         
+        "CREATE TABLE IF NOT EXISTS regular_customers (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            customer_name VARCHAR(255) NOT NULL,
+            phone VARCHAR(20) NOT NULL,
+            email VARCHAR(255),
+            address TEXT,
+            status ENUM('active', 'inactive') DEFAULT 'active',
+            discount_percentage DECIMAL(5, 2) DEFAULT 0.00,
+            discount_amount DECIMAL(10, 2) DEFAULT 0.00,
+            due_amount DECIMAL(10, 2) DEFAULT 0.00,
+            total_amount DECIMAL(10, 2) DEFAULT 0.00,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        )",
+        
         "CREATE TABLE IF NOT EXISTS order_details (
             id INT AUTO_INCREMENT PRIMARY KEY,
             order_number VARCHAR(100) NOT NULL UNIQUE,
@@ -151,22 +167,6 @@ function initializeDatabase() {
             email VARCHAR(255) NOT NULL UNIQUE,
             password VARCHAR(255) NOT NULL,
             role ENUM('staff', 'manager') NOT NULL DEFAULT 'staff',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-        )",
-        
-        "CREATE TABLE IF NOT EXISTS regular_customers (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            customer_name VARCHAR(255) NOT NULL,
-            phone VARCHAR(20) NOT NULL,
-            email VARCHAR(255),
-            address TEXT,
-            status ENUM('active', 'inactive') DEFAULT 'active',
-            discount_percentage DECIMAL(5, 2) DEFAULT 0.00,
-            discount_amount DECIMAL(10, 2) DEFAULT 0.00,
-            due_amount DECIMAL(10, 2) DEFAULT 0.00,
-            total_amount DECIMAL(10, 2) DEFAULT 0.00,
-            notes TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         )",
