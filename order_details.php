@@ -546,8 +546,37 @@ $conn->close();
                 foodSearchResults = document.getElementById('foodSearchResults');
                 
                 if (!foodSearchInput || !foodSearchResults) return;
+
+                var highlightedFoodIndex = -1;
+
+                function getFoodItems() {
+                    return foodSearchResults.querySelectorAll('.search-result-item');
+                }
+
+                function setFoodHighlight(index) {
+                    var items = getFoodItems();
+                    items.forEach(function(el, i) {
+                        if (i === index) {
+                            el.classList.add('bg-indigo-100');
+                            el.scrollIntoView({ block: 'nearest' });
+                        } else {
+                            el.classList.remove('bg-indigo-100');
+                        }
+                    });
+                    highlightedFoodIndex = index;
+                }
+
+                function selectFoodItem(food) {
+                    addFoodItem(food.id, 1, null, 'full');
+                    foodSearchInput.value = '';
+                    foodSearchResults.classList.add('hidden');
+                    highlightedFoodIndex = -1;
+                    // Keep focus on search so user can keep adding items
+                    foodSearchInput.focus();
+                }
                 
                 foodSearchInput.addEventListener('input', function() {
+                    highlightedFoodIndex = -1;
                     var searchTerm = this.value.toLowerCase().trim();
                     
                     if (searchTerm.length === 0) {
@@ -555,7 +584,6 @@ $conn->close();
                         return;
                     }
                     
-                    // Filter menu items
                     var filteredItems = [];
                     for (var foodId in menuData) {
                         var food = menuData[foodId];
@@ -564,42 +592,63 @@ $conn->close();
                         }
                     }
                     
-                    // Display results
                     if (filteredItems.length > 0) {
                         foodSearchResults.innerHTML = '';
                         filteredItems.forEach(function(food) {
                             var itemDiv = document.createElement('div');
-                            itemDiv.className = 'px-4 py-3 hover:bg-indigo-50 cursor-pointer border-b border-gray-100 transition-colors flex justify-between items-center';
-                            itemDiv.innerHTML = `
-                                <div>
-                                    <div class="font-medium text-gray-900">${food.name}</div>
-                                    <div class="text-sm text-gray-600">Rs ${food.price.toFixed(2)}</div>
-                                </div>
-                                <div class="text-indigo-600 font-semibold">+ Add</div>
-                            `;
-                            itemDiv.addEventListener('click', function() {
-                                addFoodItem(food.id, 1, null, 'full');
-                                foodSearchInput.value = '';
-                                foodSearchResults.classList.add('hidden');
+                            itemDiv.className = 'search-result-item px-4 py-3 hover:bg-indigo-50 cursor-pointer border-b border-gray-100 transition-colors flex justify-between items-center';
+                            itemDiv.innerHTML = '<div><div class="font-medium text-gray-900">' + food.name + '</div><div class="text-sm text-gray-600">Rs ' + food.price.toFixed(2) + '</div></div><div class="text-indigo-600 font-semibold text-sm">↵ Add</div>';
+                            itemDiv.addEventListener('mousedown', function(e) {
+                                e.preventDefault(); // prevent blur before click
+                                selectFoodItem(food);
                             });
                             foodSearchResults.appendChild(itemDiv);
                         });
                         foodSearchResults.classList.remove('hidden');
                     } else {
-                        foodSearchResults.innerHTML = '<div class="px-4 py-3 text-gray-500 text-center">No items found matching your search</div>';
+                        foodSearchResults.innerHTML = '<div class="px-4 py-3 text-gray-500 text-center text-sm">No items found</div>';
                         foodSearchResults.classList.remove('hidden');
                     }
                 });
+
+                foodSearchInput.addEventListener('keydown', function(e) {
+                    var items = getFoodItems();
+                    if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        if (foodSearchResults.classList.contains('hidden') && this.value.trim()) {
+                            this.dispatchEvent(new Event('input'));
+                        }
+                        var next = Math.min(highlightedFoodIndex + 1, items.length - 1);
+                        setFoodHighlight(next);
+                    } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        var prev = Math.max(highlightedFoodIndex - 1, 0);
+                        setFoodHighlight(prev);
+                    } else if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (highlightedFoodIndex >= 0 && items[highlightedFoodIndex]) {
+                            items[highlightedFoodIndex].dispatchEvent(new MouseEvent('mousedown'));
+                        } else if (items.length === 1) {
+                            // If only one result, auto-select on Enter
+                            items[0].dispatchEvent(new MouseEvent('mousedown'));
+                        }
+                    } else if (e.key === 'Escape') {
+                        foodSearchResults.classList.add('hidden');
+                        highlightedFoodIndex = -1;
+                    }
+                });
                 
-                // Hide results when clicking outside
                 document.addEventListener('click', function(e) {
                     if (foodSearchInput && foodSearchResults && 
                         !foodSearchInput.contains(e.target) && 
                         !foodSearchResults.contains(e.target)) {
                         foodSearchResults.classList.add('hidden');
+                        highlightedFoodIndex = -1;
                     }
                 });
-            }
+            };
+            
+            // Function to apply customer discount when regular customer is selected            }
             
             // Function to apply customer discount when regular customer is selected
             function applyCustomerDiscount(customerId) {
@@ -635,60 +684,107 @@ $conn->close();
                 regularCustomerSearchResults = document.getElementById('regularCustomerSearchResults');
                 
                 if (!regularCustomerSearchInput || !regularCustomerSearchResults) return;
+
+                var highlightedCustomerIndex = -1;
+
+                function getCustomerItems() {
+                    return regularCustomerSearchResults.querySelectorAll('.customer-result-item');
+                }
+
+                function setCustomerHighlight(index) {
+                    var items = getCustomerItems();
+                    items.forEach(function(el, i) {
+                        if (i === index) {
+                            el.classList.add('bg-indigo-100');
+                            el.scrollIntoView({ block: 'nearest' });
+                        } else {
+                            el.classList.remove('bg-indigo-100');
+                        }
+                    });
+                    highlightedCustomerIndex = index;
+                }
+
+                function selectCustomer(customer) {
+                    document.getElementById('regular_customer_id').value = customer.id;
+                    regularCustomerSearchInput.value = customer.name + ' - ' + customer.phone;
+                    regularCustomerSearchResults.classList.add('hidden');
+                    highlightedCustomerIndex = -1;
+                    applyCustomerDiscount(customer.id);
+                }
                 
                 regularCustomerSearchInput.addEventListener('input', function() {
+                    highlightedCustomerIndex = -1;
                     var query = this.value.trim().toLowerCase();
                     
                     if (query.length === 0) {
                         regularCustomerSearchResults.classList.add('hidden');
+                        // Clear selection if user clears the field
+                        document.getElementById('regular_customer_id').value = '';
                         return;
                     }
                     
                     var results = [];
                     for (var customerId in regularCustomersData) {
                         var customer = regularCustomersData[customerId];
-                        var name = customer.name.toLowerCase();
-                        var phone = customer.phone.toLowerCase();
-                        
-                        if (name.includes(query) || phone.includes(query)) {
+                        if (customer.name.toLowerCase().includes(query) || customer.phone.toLowerCase().includes(query)) {
                             results.push(customer);
                         }
                     }
                     
+                    regularCustomerSearchResults.innerHTML = '';
                     if (results.length === 0) {
                         regularCustomerSearchResults.innerHTML = '<div class="p-3 text-sm text-gray-500 text-center">No customers found</div>';
-                        regularCustomerSearchResults.classList.remove('hidden');
                     } else {
-                        regularCustomerSearchResults.innerHTML = '';
                         results.forEach(function(customer) {
+                            var discountText = '';
+                            if (customer.discount_percentage > 0 || customer.discount_amount > 0) {
+                                discountText = '<div class="text-xs text-indigo-600 mt-1">Discount: ' +
+                                    (customer.discount_percentage > 0 ? customer.discount_percentage + '%' : '') +
+                                    (customer.discount_percentage > 0 && customer.discount_amount > 0 ? ' + ' : '') +
+                                    (customer.discount_amount > 0 ? 'Rs ' + parseFloat(customer.discount_amount).toFixed(2) : '') +
+                                    '</div>';
+                            }
                             var itemDiv = document.createElement('div');
-                            itemDiv.className = 'p-3 hover:bg-indigo-50 cursor-pointer border-b border-gray-200';
-                            itemDiv.innerHTML = `
-                                <div class="font-medium text-gray-900">${customer.name}</div>
-                                <div class="text-xs text-gray-600">${customer.phone}</div>
-                                ${(customer.discount_percentage > 0 || customer.discount_amount > 0) ? 
-                                    '<div class="text-xs text-indigo-600 mt-1">Discount: ' + 
-                                    (customer.discount_percentage > 0 ? customer.discount_percentage + '%' : '') + 
-                                    (customer.discount_percentage > 0 && customer.discount_amount > 0 ? ' + ' : '') + 
-                                    (customer.discount_amount > 0 ? 'Rs ' + parseFloat(customer.discount_amount).toFixed(2) : '') + 
-                                    '</div>' : ''}
-                            `;
-                            itemDiv.addEventListener('click', function() {
-                                document.getElementById('regular_customer_id').value = customer.id;
-                                regularCustomerSearchInput.value = customer.name + ' - ' + customer.phone;
-                                regularCustomerSearchResults.classList.add('hidden');
-                                applyCustomerDiscount(customer.id);
+                            itemDiv.className = 'customer-result-item p-3 hover:bg-indigo-50 cursor-pointer border-b border-gray-200 flex justify-between items-start';
+                            itemDiv.innerHTML = '<div><div class="font-medium text-gray-900">' + customer.name + '</div><div class="text-xs text-gray-600">' + customer.phone + '</div>' + discountText + '</div><div class="text-indigo-600 text-sm font-semibold ml-2">↵ Select</div>';
+                            itemDiv.addEventListener('mousedown', function(e) {
+                                e.preventDefault();
+                                selectCustomer(customer);
                             });
                             regularCustomerSearchResults.appendChild(itemDiv);
                         });
-                        regularCustomerSearchResults.classList.remove('hidden');
+                    }
+                    regularCustomerSearchResults.classList.remove('hidden');
+                });
+
+                regularCustomerSearchInput.addEventListener('keydown', function(e) {
+                    var items = getCustomerItems();
+                    if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        if (regularCustomerSearchResults.classList.contains('hidden') && this.value.trim()) {
+                            this.dispatchEvent(new Event('input'));
+                        }
+                        setCustomerHighlight(Math.min(highlightedCustomerIndex + 1, items.length - 1));
+                    } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        setCustomerHighlight(Math.max(highlightedCustomerIndex - 1, 0));
+                    } else if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (highlightedCustomerIndex >= 0 && items[highlightedCustomerIndex]) {
+                            items[highlightedCustomerIndex].dispatchEvent(new MouseEvent('mousedown'));
+                        } else if (items.length === 1) {
+                            items[0].dispatchEvent(new MouseEvent('mousedown'));
+                        }
+                    } else if (e.key === 'Escape') {
+                        regularCustomerSearchResults.classList.add('hidden');
+                        highlightedCustomerIndex = -1;
                     }
                 });
                 
-                // Hide results when clicking outside
                 document.addEventListener('click', function(e) {
                     if (!regularCustomerSearchInput.contains(e.target) && !regularCustomerSearchResults.contains(e.target)) {
                         regularCustomerSearchResults.classList.add('hidden');
+                        highlightedCustomerIndex = -1;
                     }
                 });
             }
@@ -929,7 +1025,7 @@ $conn->close();
                             <input 
                                 type="text" 
                                 id="regular_customer_search" 
-                                placeholder="🔍 Search regular customer by name or phone..." 
+                                placeholder="Type name or phone… ↑↓ navigate · Enter select · Esc close" 
                                 class="w-full px-4 py-3 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
                                 autocomplete="off"
                             >
@@ -957,7 +1053,7 @@ $conn->close();
                             <input 
                                 type="text" 
                                 id="foodSearch" 
-                                placeholder="🔍 Search food items by name..." 
+                                placeholder="Type food name… ↑↓ navigate · Enter add · Esc close" 
                                 class="w-full px-4 py-3 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
                                 autocomplete="off"
                             >
