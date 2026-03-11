@@ -60,7 +60,7 @@ if (!isset($_SESSION['admin_logged_in'])) {
                             <p class="text-sm font-medium text-gray-600 uppercase tracking-wide">Total Tables</p>
                             <p class="text-3xl font-bold text-indigo-600 mt-2"><?php echo $tables_count; ?></p>
                         </div>
-                        <div class="text-4xl opacity-20">🍽️</div>
+                        <div class="text-4xl opacity-20"></div>
                     </div>
                 </div>
                 
@@ -70,7 +70,7 @@ if (!isset($_SESSION['admin_logged_in'])) {
                             <p class="text-sm font-medium text-gray-600 uppercase tracking-wide">Normal Rooms</p>
                             <p class="text-3xl font-bold text-pink-600 mt-2"><?php echo $normal_count; ?></p>
                         </div>
-                        <div class="text-4xl opacity-20">🛏️</div>
+                        <div class="text-4xl opacity-20"></div>
                     </div>
                 </div>
                 
@@ -80,7 +80,7 @@ if (!isset($_SESSION['admin_logged_in'])) {
                             <p class="text-sm font-medium text-gray-600 uppercase tracking-wide">Active Bookings</p>
                             <p class="text-3xl font-bold text-green-600 mt-2"><?php echo $bookings_count; ?></p>
                         </div>
-                        <div class="text-4xl opacity-20">📅</div>
+                        <div class="text-4xl opacity-20"></div>
                     </div>
                 </div>
                 
@@ -90,26 +90,76 @@ if (!isset($_SESSION['admin_logged_in'])) {
                             <p class="text-sm font-medium text-gray-600 uppercase tracking-wide">Completed Orders</p>
                             <p class="text-3xl font-bold text-blue-600 mt-2"><?php echo $completed_orders; ?></p>
                         </div>
-                        <div class="text-4xl opacity-20">✅</div>
+                        <div class="text-4xl opacity-20"></div>
                     </div>
                 </div>
             </div>
 
-            <!-- Profit Card -->
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6 mb-6 md:mb-8">
-                <div class="bg-gradient-to-r from-green-500 to-emerald-600 rounded-xl shadow-lg hover:shadow-2xl transition-all duration-300 p-6 md:p-8 text-white">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <p class="text-sm font-medium text-green-100 uppercase tracking-wide mb-2">Total Profit</p>
-                            <p class="text-4xl md:text-5xl font-bold text-white">Rs <?php echo number_format($profit_amount, 2); ?></p>
-                            <p class="text-sm text-green-100 mt-2">From completed & paid orders</p>
-                        </div>
-                        <div class="text-6xl opacity-30">💰</div>
+            <!-- Profit Summary Section -->
+            <div class="bg-white rounded-xl shadow-md p-6 md:p-8 mb-6 md:mb-8">
+                <div class="flex flex-col md:flex-row md:items-center md:justify-between mb-5">
+                    <div>
+                        <h3 class="text-xl md:text-2xl font-bold text-gray-900 mb-1">💰 Profit Summary</h3>
+                        <p class="text-gray-500 text-sm">Total, cash & online profit from completed paid orders</p>
+                    </div>
+                    <!-- Period Selector -->
+                    <div class="mt-4 md:mt-0 flex gap-2 flex-wrap">
+                        <button onclick="loadProfit('today')" id="profit-btn-today" class="profit-period-btn px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium text-sm transition-all">
+                            Today
+                        </button>
+                        <button onclick="loadProfit('7days')" id="profit-btn-7days" class="profit-period-btn px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium text-sm transition-all">
+                            Last 7 Days
+                        </button>
+                        <button onclick="loadProfit('30days')" id="profit-btn-30days" class="profit-period-btn px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium text-sm transition-all">
+                            Last 30 Days
+                        </button>
                     </div>
                 </div>
+
+                <!-- Profit Cards Row -->
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4" id="profit-cards">
+                    <!-- Total Profit -->
+                    <div class="bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl p-6 text-white shadow-lg">
+                        <div class="flex items-center justify-between mb-3">
+                            <p class="text-sm font-semibold text-green-100 uppercase tracking-wide">Total Profit</p>
+                            <span class="text-3xl opacity-30">💰</span>
+                        </div>
+                        <p id="profit-total" class="text-3xl md:text-4xl font-bold">Rs 0.00</p>
+                        <p class="text-xs text-green-100 mt-2">All payment methods combined</p>
+                    </div>
+
+                    <!-- Cash Profit -->
+                    <div class="bg-gradient-to-br from-blue-500 to-blue-700 rounded-xl p-6 text-white shadow-lg">
+                        <div class="flex items-center justify-between mb-3">
+                            <p class="text-sm font-semibold text-blue-100 uppercase tracking-wide">Cash Profit</p>
+                            <span class="text-3xl opacity-30">🪙</span>
+                        </div>
+                        <p id="profit-cash" class="text-3xl md:text-4xl font-bold">Rs 0.00</p>
+                        <p class="text-xs text-blue-100 mt-2">Paid by cash</p>
+                    </div>
+
+                    <!-- Online Profit -->
+                    <div class="bg-gradient-to-br from-purple-500 to-violet-700 rounded-xl p-6 text-white shadow-lg">
+                        <div class="flex items-center justify-between mb-3">
+                            <p class="text-sm font-semibold text-purple-100 uppercase tracking-wide">Online / Card Profit</p>
+                            <span class="text-3xl opacity-30">💳</span>
+                        </div>
+                        <p id="profit-online" class="text-3xl md:text-4xl font-bold">Rs 0.00</p>
+                        <p class="text-xs text-purple-100 mt-2">Paid online or by card</p>
+                    </div>
+                </div>
+
+                <!-- Loading spinner -->
+                <div id="profit-loading" class="hidden text-center py-4">
+                    <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-600"></div>
+                    <span class="ml-2 text-gray-500 text-sm">Loading...</span>
+                </div>
+            </div>
                 
+            <!-- Reports & Quick Actions -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6 mb-6 md:mb-8">
                 <!-- Reports Export Section -->
-                <div class="bg-white rounded-xl shadow-md p-6 md:p-8 mb-6">
+                <div class="bg-white rounded-xl shadow-md p-6 md:p-8">
                     <h3 class="text-xl font-bold text-gray-900 mb-4">📊 Download Reports</h3>
                     
                     <!-- Date Filter -->
@@ -131,7 +181,7 @@ if (!isset($_SESSION['admin_logged_in'])) {
                         </div>
                         
                         <!-- Custom Date Range -->
-                        <div id="custom-date-range" class="hidden grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div id="custom-date-range" class="hidden grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 mb-2">Start Date</label>
                                 <input type="date" id="start_date" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
@@ -199,7 +249,7 @@ if (!isset($_SESSION['admin_logged_in'])) {
                 </div>
                 
                 <!-- Custom Date Range for Chart -->
-                <div id="chart-custom-range" class="hidden grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div id="chart-custom-range" class="hidden grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-2">Start Date</label>
                         <input type="date" id="chart_start_date" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
@@ -301,8 +351,41 @@ if (!isset($_SESSION['admin_logged_in'])) {
         // Initialize with today selected
         document.addEventListener('DOMContentLoaded', function() {
             setPeriod('today');
-            loadChart('30days'); // Load 30 days chart by default
+            loadProfit('today');       // Load profit summary on page load
+            loadChart('30days');       // Load 30 days chart by default
         });
+
+        // ── Profit Summary ────────────────────────────────────────────
+        let currentProfitPeriod = 'today';
+
+        function loadProfit(period) {
+            currentProfitPeriod = period;
+
+            // Update button styles
+            document.querySelectorAll('.profit-period-btn').forEach(btn => {
+                btn.classList.remove('bg-indigo-600', 'text-white');
+                btn.classList.add('bg-gray-200', 'text-gray-700');
+            });
+            document.getElementById('profit-btn-' + period).classList.remove('bg-gray-200', 'text-gray-700');
+            document.getElementById('profit-btn-' + period).classList.add('bg-indigo-600', 'text-white');
+
+            // Show loading
+            document.getElementById('profit-loading').classList.remove('hidden');
+
+            fetch('api/analytics.php?period=' + period)
+                .then(r => r.json())
+                .then(data => {
+                    const s = data.summary;
+                    const fmt = v => 'Rs ' + parseFloat(v).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                    document.getElementById('profit-total').textContent  = fmt(s.total_revenue);
+                    document.getElementById('profit-cash').textContent   = fmt(s.cash_revenue);
+                    document.getElementById('profit-online').textContent = fmt(s.online_revenue + s.card_revenue);
+                    document.getElementById('profit-loading').classList.add('hidden');
+                })
+                .catch(() => {
+                    document.getElementById('profit-loading').classList.add('hidden');
+                });
+        }
         
         // Chart functionality
         let analyticsChart = null;
@@ -487,8 +570,9 @@ if (!isset($_SESSION['admin_logged_in'])) {
         }
         
         function showCustomChartRange() {
-            document.getElementById('chart-custom-range').classList.remove('hidden');
-            document.getElementById('chart-custom-range').classList.add('grid');
+            const r = document.getElementById('chart-custom-range');
+            r.classList.remove('hidden');
+            r.classList.add('grid');
             document.getElementById('chart-btn-custom').classList.remove('bg-gray-200', 'text-gray-700');
             document.getElementById('chart-btn-custom').classList.add('bg-indigo-600', 'text-white');
         }
