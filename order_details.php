@@ -37,9 +37,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             
             if (isset($_POST['food_items']) && is_array($_POST['food_items'])) {
                 foreach ($_POST['food_items'] as $food_id) {
-                    $qty = intval($_POST['qty_' . $food_id] ?? 0);
-                    $portionKey = 'portion_' . $food_id;
-                    $portion = isset($_POST[$portionKey]) && $_POST[$portionKey] === 'half' ? 'half' : 'full';
+                    $qty = floatval($_POST['qty_' . $food_id] ?? 0);
                     if ($qty > 0) {
                         // Get food details
                         $foodStmt = $conn->prepare("SELECT food_name, price FROM menu WHERE id = ?");
@@ -48,16 +46,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         $foodResult = $foodStmt->get_result();
                         if ($foodRow = $foodResult->fetch_assoc()) {
                             $basePrice = (float)$foodRow['price'];
-                            $unitPrice = $portion === 'half' ? ($basePrice / 2) : $basePrice;
-                            $itemTotal = $unitPrice * $qty;
+                            $itemTotal = $basePrice * $qty;
                             $items[] = [
-                                'food_id' => $food_id,
+                                'food_id'   => $food_id,
                                 'food_name' => $foodRow['food_name'],
-                                'price' => $unitPrice,
-                                'base_price' => $basePrice,
-                                'portion' => $portion,
-                                'qty' => $qty,
-                                'total' => $itemTotal
+                                'price'     => $basePrice,
+                                'qty'       => $qty,
+                                'total'     => $itemTotal
                             ];
                             $subtotal += $itemTotal;
                         }
@@ -116,9 +111,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             
             if (isset($_POST['food_items']) && is_array($_POST['food_items'])) {
                 foreach ($_POST['food_items'] as $food_id) {
-                    $qty = intval($_POST['qty_' . $food_id] ?? 0);
-                    $portionKey = 'portion_' . $food_id;
-                    $portion = isset($_POST[$portionKey]) && $_POST[$portionKey] === 'half' ? 'half' : 'full';
+                    $qty = floatval($_POST['qty_' . $food_id] ?? 0);
                     if ($qty > 0) {
                         // Get food details
                         $foodStmt = $conn->prepare("SELECT food_name, price FROM menu WHERE id = ?");
@@ -127,16 +120,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         $foodResult = $foodStmt->get_result();
                         if ($foodRow = $foodResult->fetch_assoc()) {
                             $basePrice = (float)$foodRow['price'];
-                            $unitPrice = $portion === 'half' ? ($basePrice / 2) : $basePrice;
-                            $itemTotal = $unitPrice * $qty;
+                            $itemTotal = $basePrice * $qty;
                             $items[] = [
-                                'food_id' => $food_id,
+                                'food_id'   => $food_id,
                                 'food_name' => $foodRow['food_name'],
-                                'price' => $unitPrice,
-                                'base_price' => $basePrice,
-                                'portion' => $portion,
-                                'qty' => $qty,
-                                'total' => $itemTotal
+                                'price'     => $basePrice,
+                                'qty'       => $qty,
+                                'total'     => $itemTotal
                             ];
                             $subtotal += $itemTotal;
                         }
@@ -405,37 +395,54 @@ $conn->close();
                 
                 var food = menuData[foodId];
                 var foodIdToUse = existingFoodId || foodId;
-                var portionValue = portion || 'full';
+
+                // Determine initial qty: support legacy portion (half=0.5, full=1) or direct float qty
+                var initQty = 1;
+                if (qty && parseFloat(qty) > 0) {
+                    initQty = parseFloat(qty);
+                } else if (portion === 'half') {
+                    initQty = 0.5;
+                }
                 
                 if (selectedFoods.indexOf(foodIdToUse) !== -1) return;
-                
                 selectedFoods.push(foodIdToUse);
                 
                 var container = document.getElementById('foodItemsContainer');
                 var itemDiv = document.createElement('div');
-                itemDiv.className = 'food-item flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200';
+                itemDiv.className = 'food-item flex flex-wrap items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200';
                 itemDiv.id = 'foodItem_' + foodIdToUse;
                 itemDiv.innerHTML = `
                     <input type="hidden" name="food_items[]" value="${foodId}">
-                    <div class="flex-1">
+                    <div class="flex-1 min-w-0">
                         <div class="font-medium text-gray-900">${food.name}</div>
-                        <div class="text-xs text-gray-500">Base Price: Rs ${food.price.toFixed(2)}</div>
+                        <div class="text-xs text-gray-500">Rs ${food.price.toFixed(2)} / unit</div>
                     </div>
-                    <div class="flex items-center gap-3">
-                        <div class="flex items-center gap-2">
-                            <label class="text-sm text-gray-700">Portion:</label>
-                            <select name="portion_${foodId}" class="portion-select px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-xs" onchange="calculateTotal()">
-                                <option value="full" ${portionValue === 'full' ? 'selected' : ''}>Full</option>
-                                <option value="half" ${portionValue === 'half' ? 'selected' : ''}>Half</option>
-                            </select>
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <label class="text-sm font-medium text-gray-700">Qty:</label>
+                        <div class="flex items-center gap-1">
+                            <button type="button" onclick="stepQty('${foodIdToUse}', -0.5)" class="w-7 h-7 rounded bg-gray-200 hover:bg-gray-300 font-bold text-gray-700 flex items-center justify-center text-sm">−</button>
+                            <input type="number"
+                                name="qty_${foodId}"
+                                id="qty_input_${foodIdToUse}"
+                                value="${initQty}"
+                                min="0.5"
+                                step="0.5"
+                                class="w-20 px-2 py-1 border border-gray-300 rounded text-center focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-sm"
+                                oninput="calculateTotal()"
+                                onchange="calculateTotal()"
+                            >
+                            <button type="button" onclick="stepQty('${foodIdToUse}', 0.5)" class="w-7 h-7 rounded bg-gray-200 hover:bg-gray-300 font-bold text-gray-700 flex items-center justify-center text-sm">+</button>
                         </div>
-                        <div class="flex items-center gap-2">
-                            <label class="text-sm text-gray-700">Qty:</label>
-                            <input type="number" name="qty_${foodId}" value="${qty || 1}" min="1" class="w-20 px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none" onchange="calculateTotal()" required>
+                        <div class="flex gap-1">
+                            <button type="button" onclick="setQty('${foodIdToUse}', 0.5)"  class="px-2 py-1 text-xs rounded bg-orange-100 hover:bg-orange-200 text-orange-800 font-semibold">½</button>
+                            <button type="button" onclick="setQty('${foodIdToUse}', 1)"    class="px-2 py-1 text-xs rounded bg-indigo-100 hover:bg-indigo-200 text-indigo-800 font-semibold">1</button>
+                            <button type="button" onclick="setQty('${foodIdToUse}', 1.5)"  class="px-2 py-1 text-xs rounded bg-indigo-100 hover:bg-indigo-200 text-indigo-800 font-semibold">1½</button>
+                            <button type="button" onclick="setQty('${foodIdToUse}', 2)"    class="px-2 py-1 text-xs rounded bg-indigo-100 hover:bg-indigo-200 text-indigo-800 font-semibold">2</button>
                         </div>
+                        <div id="item_total_${foodIdToUse}" class="text-sm font-bold text-green-700 min-w-[70px] text-right">Rs ${(food.price * initQty).toFixed(2)}</div>
                     </div>
                     <button type="button" onclick="removeFoodItem(${foodIdToUse})" class="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition-colors text-sm">
-                        Remove
+                        ✕
                     </button>
                 `;
                 container.appendChild(itemDiv);
@@ -450,6 +457,23 @@ $conn->close();
                     calculateTotal();
                 }
             };
+
+            // Step qty by delta (±0.5) using the unique foodIdToUse
+            window.stepQty = function(foodIdToUse, delta) {
+                var input = document.getElementById('qty_input_' + foodIdToUse);
+                if (!input) return;
+                var newVal = Math.max(0.5, Math.round((parseFloat(input.value) + delta) * 10) / 10);
+                input.value = newVal;
+                calculateTotal();
+            };
+
+            // Set qty to exact value using the unique foodIdToUse
+            window.setQty = function(foodIdToUse, val) {
+                var input = document.getElementById('qty_input_' + foodIdToUse);
+                if (!input) return;
+                input.value = val;
+                calculateTotal();
+            };
             
             calculateTotal = function() {
                 var subtotal = 0;
@@ -461,21 +485,22 @@ $conn->close();
                     if (!qtyInput) return;
                     
                     var foodId = qtyInput.name.replace('qty_', '');
-                    var qty = parseInt(qtyInput.value) || 0;
-                    var portionSelect = item.querySelector('.portion-select');
-                    var portion = portionSelect ? portionSelect.value : 'full';
+                    var qty = parseFloat(qtyInput.value) || 0;
                     
                     if (menuData[foodId] && qty > 0) {
                         var basePrice = menuData[foodId].price;
-                        var unitPrice = portion === 'half' ? (basePrice / 2) : basePrice;
-                        var itemTotal = unitPrice * qty;
+                        var itemTotal = basePrice * qty;
                         subtotal += itemTotal;
+
+                        // Update per-item total display
+                        var foodIdToUse = qtyInput.id.replace('qty_input_', '');
+                        var itemTotalEl = document.getElementById('item_total_' + foodIdToUse);
+                        if (itemTotalEl) itemTotalEl.textContent = 'Rs ' + itemTotal.toFixed(2);
                         
                         billItems.push({
                             name: menuData[foodId].name,
-                            portion: portion,
                             qty: qty,
-                            unitPrice: unitPrice,
+                            unitPrice: basePrice,
                             total: itemTotal
                         });
                     }
@@ -514,19 +539,11 @@ $conn->close();
                             var row = document.createElement('div');
                             row.className = 'flex items-center justify-between py-1 text-sm';
                             
-                            var labelParts = [item.name];
-                            if (item.portion === 'half') {
-                                labelParts.push('(Half)');
-                            }
-                            labelParts.push('(x' + item.qty + ')');
+                            var label = item.name + ' × ' + item.qty;
                             
                             row.innerHTML = `
-                                <div class="text-gray-800">
-                                    ${labelParts.join(' ')}
-                                </div>
-                                <div class="font-semibold text-gray-900">
-                                    Rs ${item.total.toFixed(2)}
-                                </div>
+                                <div class="text-gray-800">${label}</div>
+                                <div class="font-semibold text-gray-900">Rs ${item.total.toFixed(2)}</div>
                             `;
                             
                             billSummaryItemsEl.appendChild(row);
