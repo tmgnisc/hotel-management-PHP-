@@ -199,6 +199,11 @@ if (isset($_GET['msg'])) {
     $messageType = $_GET['type'] ?? 'success';
 }
 
+// View mode: 'today' (default) or 'all'
+$viewMode = (isset($_GET['view']) && $_GET['view'] === 'all') ? 'all' : 'today';
+$todayFilter = "AND DATE(o.order_date) = CURDATE()";
+$dateWhereClause = ($viewMode === 'all') ? '' : $todayFilter;
+
 // Fetch pending orders separately
 // Show orders as pending if: order_status is pending OR (order_status is completed AND payment_status is pending)
 $pendingOrders = $conn->query("
@@ -206,7 +211,8 @@ $pendingOrders = $conn->query("
     FROM order_details o 
     LEFT JOIN tables t ON o.table_id = t.id 
     LEFT JOIN regular_customers rc ON o.regular_customer_id = rc.id
-    WHERE o.order_status = 'pending' OR (o.order_status = 'completed' AND o.payment_status = 'pending')
+    WHERE (o.order_status = 'pending' OR (o.order_status = 'completed' AND o.payment_status = 'pending'))
+    $dateWhereClause
     ORDER BY o.order_date DESC
 ");
 if (!$pendingOrders) {
@@ -214,11 +220,13 @@ if (!$pendingOrders) {
 }
 
 // Fetch all orders with table information
+$allDateFilter = ($viewMode === 'all') ? '' : "WHERE DATE(o.order_date) = CURDATE()";
 $orders = $conn->query("
     SELECT o.*, t.table_number, rc.customer_name AS reg_customer_name, rc.phone AS reg_customer_phone
     FROM order_details o 
     LEFT JOIN tables t ON o.table_id = t.id 
     LEFT JOIN regular_customers rc ON o.regular_customer_id = rc.id
+    $allDateFilter
     ORDER BY o.order_date DESC
 ");
 if (!$orders) {
@@ -834,10 +842,30 @@ $conn->close();
 
         <main class="md:ml-64 p-4 md:p-6 lg:p-8">
             <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-                <h2 class="text-2xl md:text-3xl font-bold text-gray-900">Order Details Management</h2>
-                <button onclick="openModal('create')" class="px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-all shadow-md hover:shadow-lg transform hover:scale-105">
-                    + Add New Order
-                </button>
+                <div>
+                    <h2 class="text-2xl md:text-3xl font-bold text-gray-900">Order Details Management</h2>
+                    <p class="text-sm text-gray-500 mt-1">
+                        <?php if ($viewMode === 'today'): ?>
+                            📅 Showing <strong>today's</strong> orders
+                        <?php else: ?>
+                            📋 Showing <strong>all</strong> orders
+                        <?php endif; ?>
+                    </p>
+                </div>
+                <div class="flex flex-wrap gap-3">
+                    <?php if ($viewMode === 'today'): ?>
+                        <a href="?view=all" class="px-5 py-2.5 bg-gray-700 text-white rounded-lg font-semibold hover:bg-gray-800 transition-all shadow-md text-sm flex items-center gap-2">
+                            📋 View All Orders
+                        </a>
+                    <?php else: ?>
+                        <a href="?" class="px-5 py-2.5 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-all shadow-md text-sm flex items-center gap-2">
+                            📅 Today Only
+                        </a>
+                    <?php endif; ?>
+                    <button onclick="openModal('create')" class="px-6 py-2.5 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-all shadow-md hover:shadow-lg">
+                        + Add New Order
+                    </button>
+                </div>
             </div>
 
             <?php if ($message): ?>
@@ -852,6 +880,7 @@ $conn->close();
                 <h3 class="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
                     <span class="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></span>
                     Pending Orders
+                    <span class="text-sm font-normal text-gray-400">(<?php echo $viewMode === 'today' ? 'Today' : 'All Time'; ?>)</span>
                 </h3>
                 <div class="bg-white rounded-xl shadow-md overflow-hidden">
                     <div class="overflow-x-auto">
@@ -941,7 +970,10 @@ $conn->close();
 
             <!-- All Orders Section -->
             <div>
-                <h3 class="text-xl font-bold text-gray-900 mb-4">All Orders</h3>
+                <h3 class="text-xl font-bold text-gray-900 mb-4">
+                    All Orders
+                    <span class="text-sm font-normal text-gray-400">(<?php echo $viewMode === 'today' ? 'Today' : 'All Time'; ?>)</span>
+                </h3>
                 <div class="bg-white rounded-xl shadow-md overflow-hidden">
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200">
