@@ -202,9 +202,10 @@ if (isset($_GET['msg'])) {
 // Fetch pending orders separately
 // Show orders as pending if: order_status is pending OR (order_status is completed AND payment_status is pending)
 $pendingOrders = $conn->query("
-    SELECT o.*, t.table_number 
+    SELECT o.*, t.table_number, rc.customer_name AS reg_customer_name, rc.phone AS reg_customer_phone
     FROM order_details o 
     LEFT JOIN tables t ON o.table_id = t.id 
+    LEFT JOIN regular_customers rc ON o.regular_customer_id = rc.id
     WHERE o.order_status = 'pending' OR (o.order_status = 'completed' AND o.payment_status = 'pending')
     ORDER BY o.order_date DESC
 ");
@@ -214,9 +215,10 @@ if (!$pendingOrders) {
 
 // Fetch all orders with table information
 $orders = $conn->query("
-    SELECT o.*, t.table_number 
+    SELECT o.*, t.table_number, rc.customer_name AS reg_customer_name, rc.phone AS reg_customer_phone
     FROM order_details o 
     LEFT JOIN tables t ON o.table_id = t.id 
+    LEFT JOIN regular_customers rc ON o.regular_customer_id = rc.id
     ORDER BY o.order_date DESC
 ");
 if (!$orders) {
@@ -857,7 +859,7 @@ $conn->close();
                             <thead class="bg-gradient-to-r from-yellow-500 to-orange-500 text-white">
                                 <tr>
                                     <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">ID</th>
-                                    <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Order Number</th>
+                                    <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Customer / Order No</th>
                                     <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Table</th>
                                     <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Order Date</th>
                                     <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Total</th>
@@ -874,7 +876,17 @@ $conn->close();
                                 ?>
                                 <tr class="hover:bg-yellow-50 transition-colors">
                                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo $row['id']; ?></td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900"><?php echo htmlspecialchars($row['order_number']); ?></td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                        <?php if (!empty($row['reg_customer_name'])): ?>
+                                            <div class="flex items-center gap-1">
+                                                <span class="text-indigo-600">👤</span>
+                                                <span class="font-semibold text-indigo-700"><?php echo htmlspecialchars($row['reg_customer_name']); ?></span>
+                                            </div>
+                                            <div class="text-xs text-gray-400 mt-0.5"><?php echo htmlspecialchars($row['reg_customer_phone'] ?? ''); ?></div>
+                                        <?php else: ?>
+                                            <span class="text-gray-700"><?php echo htmlspecialchars($row['order_number']); ?></span>
+                                        <?php endif; ?>
+                                    </td>
                                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600"><?php echo htmlspecialchars($row['table_number'] ?? 'N/A'); ?></td>
                                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                                         <?php echo $row['order_date'] ? date('M d, Y H:i', strtotime($row['order_date'])) : 'N/A'; ?>
@@ -936,7 +948,7 @@ $conn->close();
                         <thead class="bg-gradient-to-r from-indigo-600 to-purple-600 text-white">
                             <tr>
                                 <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">ID</th>
-                                <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Order Number</th>
+                                <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Customer / Order No</th>
                                 <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Table</th>
                                 <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Order Date</th>
                                 <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Total</th>
@@ -949,7 +961,17 @@ $conn->close();
                             <?php while ($row = $orders->fetch_assoc()): ?>
                             <tr class="hover:bg-indigo-50 transition-colors">
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo $row['id']; ?></td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900"><?php echo htmlspecialchars($row['order_number']); ?></td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                    <?php if (!empty($row['reg_customer_name'])): ?>
+                                        <div class="flex items-center gap-1">
+                                            <span class="text-indigo-600">👤</span>
+                                            <span class="font-semibold text-indigo-700"><?php echo htmlspecialchars($row['reg_customer_name']); ?></span>
+                                        </div>
+                                        <div class="text-xs text-gray-400 mt-0.5"><?php echo htmlspecialchars($row['reg_customer_phone'] ?? ''); ?></div>
+                                    <?php else: ?>
+                                        <span class="text-gray-700"><?php echo htmlspecialchars($row['order_number']); ?></span>
+                                    <?php endif; ?>
+                                </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600"><?php echo htmlspecialchars($row['table_number'] ?? 'N/A'); ?></td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                                     <?php echo $row['order_date'] ? date('M d, Y H:i', strtotime($row['order_date'])) : 'N/A'; ?>
