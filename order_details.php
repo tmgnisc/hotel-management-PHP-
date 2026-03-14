@@ -37,9 +37,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             
             if (isset($_POST['food_items']) && is_array($_POST['food_items'])) {
                 foreach ($_POST['food_items'] as $food_id) {
-                    $qty = intval($_POST['qty_' . $food_id] ?? 0);
-                    $portionKey = 'portion_' . $food_id;
-                    $portion = isset($_POST[$portionKey]) && $_POST[$portionKey] === 'half' ? 'half' : 'full';
+                    $qty = floatval($_POST['qty_' . $food_id] ?? 0);
                     if ($qty > 0) {
                         // Get food details
                         $foodStmt = $conn->prepare("SELECT food_name, price FROM menu WHERE id = ?");
@@ -48,16 +46,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         $foodResult = $foodStmt->get_result();
                         if ($foodRow = $foodResult->fetch_assoc()) {
                             $basePrice = (float)$foodRow['price'];
-                            $unitPrice = $portion === 'half' ? ($basePrice / 2) : $basePrice;
-                            $itemTotal = $unitPrice * $qty;
+                            $itemTotal = $basePrice * $qty;
                             $items[] = [
-                                'food_id' => $food_id,
+                                'food_id'   => $food_id,
                                 'food_name' => $foodRow['food_name'],
-                                'price' => $unitPrice,
-                                'base_price' => $basePrice,
-                                'portion' => $portion,
-                                'qty' => $qty,
-                                'total' => $itemTotal
+                                'price'     => $basePrice,
+                                'qty'       => $qty,
+                                'total'     => $itemTotal
                             ];
                             $subtotal += $itemTotal;
                         }
@@ -116,9 +111,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             
             if (isset($_POST['food_items']) && is_array($_POST['food_items'])) {
                 foreach ($_POST['food_items'] as $food_id) {
-                    $qty = intval($_POST['qty_' . $food_id] ?? 0);
-                    $portionKey = 'portion_' . $food_id;
-                    $portion = isset($_POST[$portionKey]) && $_POST[$portionKey] === 'half' ? 'half' : 'full';
+                    $qty = floatval($_POST['qty_' . $food_id] ?? 0);
                     if ($qty > 0) {
                         // Get food details
                         $foodStmt = $conn->prepare("SELECT food_name, price FROM menu WHERE id = ?");
@@ -127,16 +120,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         $foodResult = $foodStmt->get_result();
                         if ($foodRow = $foodResult->fetch_assoc()) {
                             $basePrice = (float)$foodRow['price'];
-                            $unitPrice = $portion === 'half' ? ($basePrice / 2) : $basePrice;
-                            $itemTotal = $unitPrice * $qty;
+                            $itemTotal = $basePrice * $qty;
                             $items[] = [
-                                'food_id' => $food_id,
+                                'food_id'   => $food_id,
                                 'food_name' => $foodRow['food_name'],
-                                'price' => $unitPrice,
-                                'base_price' => $basePrice,
-                                'portion' => $portion,
-                                'qty' => $qty,
-                                'total' => $itemTotal
+                                'price'     => $basePrice,
+                                'qty'       => $qty,
+                                'total'     => $itemTotal
                             ];
                             $subtotal += $itemTotal;
                         }
@@ -209,13 +199,20 @@ if (isset($_GET['msg'])) {
     $messageType = $_GET['type'] ?? 'success';
 }
 
+// View mode: 'today' (default) or 'all'
+$viewMode = (isset($_GET['view']) && $_GET['view'] === 'all') ? 'all' : 'today';
+$todayFilter = "AND DATE(o.order_date) = CURDATE()";
+$dateWhereClause = ($viewMode === 'all') ? '' : $todayFilter;
+
 // Fetch pending orders separately
 // Show orders as pending if: order_status is pending OR (order_status is completed AND payment_status is pending)
 $pendingOrders = $conn->query("
-    SELECT o.*, t.table_number 
+    SELECT o.*, t.table_number, rc.customer_name AS reg_customer_name, rc.phone AS reg_customer_phone
     FROM order_details o 
     LEFT JOIN tables t ON o.table_id = t.id 
-    WHERE o.order_status = 'pending' OR (o.order_status = 'completed' AND o.payment_status = 'pending')
+    LEFT JOIN regular_customers rc ON o.regular_customer_id = rc.id
+    WHERE (o.order_status = 'pending' OR (o.order_status = 'completed' AND o.payment_status = 'pending'))
+    $dateWhereClause
     ORDER BY o.order_date DESC
 ");
 if (!$pendingOrders) {
@@ -223,10 +220,13 @@ if (!$pendingOrders) {
 }
 
 // Fetch all orders with table information
+$allDateFilter = ($viewMode === 'all') ? '' : "WHERE DATE(o.order_date) = CURDATE()";
 $orders = $conn->query("
-    SELECT o.*, t.table_number 
+    SELECT o.*, t.table_number, rc.customer_name AS reg_customer_name, rc.phone AS reg_customer_phone
     FROM order_details o 
     LEFT JOIN tables t ON o.table_id = t.id 
+    LEFT JOIN regular_customers rc ON o.regular_customer_id = rc.id
+    $allDateFilter
     ORDER BY o.order_date DESC
 ");
 if (!$orders) {
@@ -405,37 +405,54 @@ $conn->close();
                 
                 var food = menuData[foodId];
                 var foodIdToUse = existingFoodId || foodId;
-                var portionValue = portion || 'full';
+
+                // Determine initial qty: support legacy portion (half=0.5, full=1) or direct float qty
+                var initQty = 1;
+                if (qty && parseFloat(qty) > 0) {
+                    initQty = parseFloat(qty);
+                } else if (portion === 'half') {
+                    initQty = 0.5;
+                }
                 
                 if (selectedFoods.indexOf(foodIdToUse) !== -1) return;
-                
                 selectedFoods.push(foodIdToUse);
                 
                 var container = document.getElementById('foodItemsContainer');
                 var itemDiv = document.createElement('div');
-                itemDiv.className = 'food-item flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200';
+                itemDiv.className = 'food-item flex flex-wrap items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200';
                 itemDiv.id = 'foodItem_' + foodIdToUse;
                 itemDiv.innerHTML = `
                     <input type="hidden" name="food_items[]" value="${foodId}">
-                    <div class="flex-1">
+                    <div class="flex-1 min-w-0">
                         <div class="font-medium text-gray-900">${food.name}</div>
-                        <div class="text-xs text-gray-500">Base Price: Rs ${food.price.toFixed(2)}</div>
+                        <div class="text-xs text-gray-500">Rs ${food.price.toFixed(2)} / unit</div>
                     </div>
-                    <div class="flex items-center gap-3">
-                        <div class="flex items-center gap-2">
-                            <label class="text-sm text-gray-700">Portion:</label>
-                            <select name="portion_${foodId}" class="portion-select px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-xs" onchange="calculateTotal()">
-                                <option value="full" ${portionValue === 'full' ? 'selected' : ''}>Full</option>
-                                <option value="half" ${portionValue === 'half' ? 'selected' : ''}>Half</option>
-                            </select>
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <label class="text-sm font-medium text-gray-700">Qty:</label>
+                        <div class="flex items-center gap-1">
+                            <button type="button" onclick="stepQty('${foodIdToUse}', -0.5)" class="w-7 h-7 rounded bg-gray-200 hover:bg-gray-300 font-bold text-gray-700 flex items-center justify-center text-sm">−</button>
+                            <input type="number"
+                                name="qty_${foodId}"
+                                id="qty_input_${foodIdToUse}"
+                                value="${initQty}"
+                                min="0.5"
+                                step="0.5"
+                                class="w-20 px-2 py-1 border border-gray-300 rounded text-center focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-sm"
+                                oninput="calculateTotal()"
+                                onchange="calculateTotal()"
+                            >
+                            <button type="button" onclick="stepQty('${foodIdToUse}', 0.5)" class="w-7 h-7 rounded bg-gray-200 hover:bg-gray-300 font-bold text-gray-700 flex items-center justify-center text-sm">+</button>
                         </div>
-                        <div class="flex items-center gap-2">
-                            <label class="text-sm text-gray-700">Qty:</label>
-                            <input type="number" name="qty_${foodId}" value="${qty || 1}" min="1" class="w-20 px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none" onchange="calculateTotal()" required>
+                        <div class="flex gap-1">
+                            <button type="button" onclick="setQty('${foodIdToUse}', 0.5)"  class="px-2 py-1 text-xs rounded bg-orange-100 hover:bg-orange-200 text-orange-800 font-semibold">½</button>
+                            <button type="button" onclick="setQty('${foodIdToUse}', 1)"    class="px-2 py-1 text-xs rounded bg-indigo-100 hover:bg-indigo-200 text-indigo-800 font-semibold">1</button>
+                            <button type="button" onclick="setQty('${foodIdToUse}', 1.5)"  class="px-2 py-1 text-xs rounded bg-indigo-100 hover:bg-indigo-200 text-indigo-800 font-semibold">1½</button>
+                            <button type="button" onclick="setQty('${foodIdToUse}', 2)"    class="px-2 py-1 text-xs rounded bg-indigo-100 hover:bg-indigo-200 text-indigo-800 font-semibold">2</button>
                         </div>
+                        <div id="item_total_${foodIdToUse}" class="text-sm font-bold text-green-700 min-w-[70px] text-right">Rs ${(food.price * initQty).toFixed(2)}</div>
                     </div>
                     <button type="button" onclick="removeFoodItem(${foodIdToUse})" class="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition-colors text-sm">
-                        Remove
+                        ✕
                     </button>
                 `;
                 container.appendChild(itemDiv);
@@ -450,6 +467,23 @@ $conn->close();
                     calculateTotal();
                 }
             };
+
+            // Step qty by delta (±0.5) using the unique foodIdToUse
+            window.stepQty = function(foodIdToUse, delta) {
+                var input = document.getElementById('qty_input_' + foodIdToUse);
+                if (!input) return;
+                var newVal = Math.max(0.5, Math.round((parseFloat(input.value) + delta) * 10) / 10);
+                input.value = newVal;
+                calculateTotal();
+            };
+
+            // Set qty to exact value using the unique foodIdToUse
+            window.setQty = function(foodIdToUse, val) {
+                var input = document.getElementById('qty_input_' + foodIdToUse);
+                if (!input) return;
+                input.value = val;
+                calculateTotal();
+            };
             
             calculateTotal = function() {
                 var subtotal = 0;
@@ -461,21 +495,22 @@ $conn->close();
                     if (!qtyInput) return;
                     
                     var foodId = qtyInput.name.replace('qty_', '');
-                    var qty = parseInt(qtyInput.value) || 0;
-                    var portionSelect = item.querySelector('.portion-select');
-                    var portion = portionSelect ? portionSelect.value : 'full';
+                    var qty = parseFloat(qtyInput.value) || 0;
                     
                     if (menuData[foodId] && qty > 0) {
                         var basePrice = menuData[foodId].price;
-                        var unitPrice = portion === 'half' ? (basePrice / 2) : basePrice;
-                        var itemTotal = unitPrice * qty;
+                        var itemTotal = basePrice * qty;
                         subtotal += itemTotal;
+
+                        // Update per-item total display
+                        var foodIdToUse = qtyInput.id.replace('qty_input_', '');
+                        var itemTotalEl = document.getElementById('item_total_' + foodIdToUse);
+                        if (itemTotalEl) itemTotalEl.textContent = 'Rs ' + itemTotal.toFixed(2);
                         
                         billItems.push({
                             name: menuData[foodId].name,
-                            portion: portion,
                             qty: qty,
-                            unitPrice: unitPrice,
+                            unitPrice: basePrice,
                             total: itemTotal
                         });
                     }
@@ -514,19 +549,11 @@ $conn->close();
                             var row = document.createElement('div');
                             row.className = 'flex items-center justify-between py-1 text-sm';
                             
-                            var labelParts = [item.name];
-                            if (item.portion === 'half') {
-                                labelParts.push('(Half)');
-                            }
-                            labelParts.push('(x' + item.qty + ')');
+                            var label = item.name + ' × ' + item.qty;
                             
                             row.innerHTML = `
-                                <div class="text-gray-800">
-                                    ${labelParts.join(' ')}
-                                </div>
-                                <div class="font-semibold text-gray-900">
-                                    Rs ${item.total.toFixed(2)}
-                                </div>
+                                <div class="text-gray-800">${label}</div>
+                                <div class="font-semibold text-gray-900">Rs ${item.total.toFixed(2)}</div>
                             `;
                             
                             billSummaryItemsEl.appendChild(row);
@@ -546,8 +573,37 @@ $conn->close();
                 foodSearchResults = document.getElementById('foodSearchResults');
                 
                 if (!foodSearchInput || !foodSearchResults) return;
+
+                var highlightedFoodIndex = -1;
+
+                function getFoodItems() {
+                    return foodSearchResults.querySelectorAll('.search-result-item');
+                }
+
+                function setFoodHighlight(index) {
+                    var items = getFoodItems();
+                    items.forEach(function(el, i) {
+                        if (i === index) {
+                            el.classList.add('bg-indigo-100');
+                            el.scrollIntoView({ block: 'nearest' });
+                        } else {
+                            el.classList.remove('bg-indigo-100');
+                        }
+                    });
+                    highlightedFoodIndex = index;
+                }
+
+                function selectFoodItem(food) {
+                    addFoodItem(food.id, 1, null, 'full');
+                    foodSearchInput.value = '';
+                    foodSearchResults.classList.add('hidden');
+                    highlightedFoodIndex = -1;
+                    // Keep focus on search so user can keep adding items
+                    foodSearchInput.focus();
+                }
                 
                 foodSearchInput.addEventListener('input', function() {
+                    highlightedFoodIndex = -1;
                     var searchTerm = this.value.toLowerCase().trim();
                     
                     if (searchTerm.length === 0) {
@@ -555,7 +611,6 @@ $conn->close();
                         return;
                     }
                     
-                    // Filter menu items
                     var filteredItems = [];
                     for (var foodId in menuData) {
                         var food = menuData[foodId];
@@ -564,42 +619,63 @@ $conn->close();
                         }
                     }
                     
-                    // Display results
                     if (filteredItems.length > 0) {
                         foodSearchResults.innerHTML = '';
                         filteredItems.forEach(function(food) {
                             var itemDiv = document.createElement('div');
-                            itemDiv.className = 'px-4 py-3 hover:bg-indigo-50 cursor-pointer border-b border-gray-100 transition-colors flex justify-between items-center';
-                            itemDiv.innerHTML = `
-                                <div>
-                                    <div class="font-medium text-gray-900">${food.name}</div>
-                                    <div class="text-sm text-gray-600">Rs ${food.price.toFixed(2)}</div>
-                                </div>
-                                <div class="text-indigo-600 font-semibold">+ Add</div>
-                            `;
-                            itemDiv.addEventListener('click', function() {
-                                addFoodItem(food.id, 1, null, 'full');
-                                foodSearchInput.value = '';
-                                foodSearchResults.classList.add('hidden');
+                            itemDiv.className = 'search-result-item px-4 py-3 hover:bg-indigo-50 cursor-pointer border-b border-gray-100 transition-colors flex justify-between items-center';
+                            itemDiv.innerHTML = '<div><div class="font-medium text-gray-900">' + food.name + '</div><div class="text-sm text-gray-600">Rs ' + food.price.toFixed(2) + '</div></div><div class="text-indigo-600 font-semibold text-sm">↵ Add</div>';
+                            itemDiv.addEventListener('mousedown', function(e) {
+                                e.preventDefault(); // prevent blur before click
+                                selectFoodItem(food);
                             });
                             foodSearchResults.appendChild(itemDiv);
                         });
                         foodSearchResults.classList.remove('hidden');
                     } else {
-                        foodSearchResults.innerHTML = '<div class="px-4 py-3 text-gray-500 text-center">No items found matching your search</div>';
+                        foodSearchResults.innerHTML = '<div class="px-4 py-3 text-gray-500 text-center text-sm">No items found</div>';
                         foodSearchResults.classList.remove('hidden');
                     }
                 });
+
+                foodSearchInput.addEventListener('keydown', function(e) {
+                    var items = getFoodItems();
+                    if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        if (foodSearchResults.classList.contains('hidden') && this.value.trim()) {
+                            this.dispatchEvent(new Event('input'));
+                        }
+                        var next = Math.min(highlightedFoodIndex + 1, items.length - 1);
+                        setFoodHighlight(next);
+                    } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        var prev = Math.max(highlightedFoodIndex - 1, 0);
+                        setFoodHighlight(prev);
+                    } else if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (highlightedFoodIndex >= 0 && items[highlightedFoodIndex]) {
+                            items[highlightedFoodIndex].dispatchEvent(new MouseEvent('mousedown'));
+                        } else if (items.length === 1) {
+                            // If only one result, auto-select on Enter
+                            items[0].dispatchEvent(new MouseEvent('mousedown'));
+                        }
+                    } else if (e.key === 'Escape') {
+                        foodSearchResults.classList.add('hidden');
+                        highlightedFoodIndex = -1;
+                    }
+                });
                 
-                // Hide results when clicking outside
                 document.addEventListener('click', function(e) {
                     if (foodSearchInput && foodSearchResults && 
                         !foodSearchInput.contains(e.target) && 
                         !foodSearchResults.contains(e.target)) {
                         foodSearchResults.classList.add('hidden');
+                        highlightedFoodIndex = -1;
                     }
                 });
-            }
+            };
+            
+            // Function to apply customer discount when regular customer is selected            }
             
             // Function to apply customer discount when regular customer is selected
             function applyCustomerDiscount(customerId) {
@@ -635,60 +711,107 @@ $conn->close();
                 regularCustomerSearchResults = document.getElementById('regularCustomerSearchResults');
                 
                 if (!regularCustomerSearchInput || !regularCustomerSearchResults) return;
+
+                var highlightedCustomerIndex = -1;
+
+                function getCustomerItems() {
+                    return regularCustomerSearchResults.querySelectorAll('.customer-result-item');
+                }
+
+                function setCustomerHighlight(index) {
+                    var items = getCustomerItems();
+                    items.forEach(function(el, i) {
+                        if (i === index) {
+                            el.classList.add('bg-indigo-100');
+                            el.scrollIntoView({ block: 'nearest' });
+                        } else {
+                            el.classList.remove('bg-indigo-100');
+                        }
+                    });
+                    highlightedCustomerIndex = index;
+                }
+
+                function selectCustomer(customer) {
+                    document.getElementById('regular_customer_id').value = customer.id;
+                    regularCustomerSearchInput.value = customer.name + ' - ' + customer.phone;
+                    regularCustomerSearchResults.classList.add('hidden');
+                    highlightedCustomerIndex = -1;
+                    applyCustomerDiscount(customer.id);
+                }
                 
                 regularCustomerSearchInput.addEventListener('input', function() {
+                    highlightedCustomerIndex = -1;
                     var query = this.value.trim().toLowerCase();
                     
                     if (query.length === 0) {
                         regularCustomerSearchResults.classList.add('hidden');
+                        // Clear selection if user clears the field
+                        document.getElementById('regular_customer_id').value = '';
                         return;
                     }
                     
                     var results = [];
                     for (var customerId in regularCustomersData) {
                         var customer = regularCustomersData[customerId];
-                        var name = customer.name.toLowerCase();
-                        var phone = customer.phone.toLowerCase();
-                        
-                        if (name.includes(query) || phone.includes(query)) {
+                        if (customer.name.toLowerCase().includes(query) || customer.phone.toLowerCase().includes(query)) {
                             results.push(customer);
                         }
                     }
                     
+                    regularCustomerSearchResults.innerHTML = '';
                     if (results.length === 0) {
                         regularCustomerSearchResults.innerHTML = '<div class="p-3 text-sm text-gray-500 text-center">No customers found</div>';
-                        regularCustomerSearchResults.classList.remove('hidden');
                     } else {
-                        regularCustomerSearchResults.innerHTML = '';
                         results.forEach(function(customer) {
+                            var discountText = '';
+                            if (customer.discount_percentage > 0 || customer.discount_amount > 0) {
+                                discountText = '<div class="text-xs text-indigo-600 mt-1">Discount: ' +
+                                    (customer.discount_percentage > 0 ? customer.discount_percentage + '%' : '') +
+                                    (customer.discount_percentage > 0 && customer.discount_amount > 0 ? ' + ' : '') +
+                                    (customer.discount_amount > 0 ? 'Rs ' + parseFloat(customer.discount_amount).toFixed(2) : '') +
+                                    '</div>';
+                            }
                             var itemDiv = document.createElement('div');
-                            itemDiv.className = 'p-3 hover:bg-indigo-50 cursor-pointer border-b border-gray-200';
-                            itemDiv.innerHTML = `
-                                <div class="font-medium text-gray-900">${customer.name}</div>
-                                <div class="text-xs text-gray-600">${customer.phone}</div>
-                                ${(customer.discount_percentage > 0 || customer.discount_amount > 0) ? 
-                                    '<div class="text-xs text-indigo-600 mt-1">Discount: ' + 
-                                    (customer.discount_percentage > 0 ? customer.discount_percentage + '%' : '') + 
-                                    (customer.discount_percentage > 0 && customer.discount_amount > 0 ? ' + ' : '') + 
-                                    (customer.discount_amount > 0 ? 'Rs ' + parseFloat(customer.discount_amount).toFixed(2) : '') + 
-                                    '</div>' : ''}
-                            `;
-                            itemDiv.addEventListener('click', function() {
-                                document.getElementById('regular_customer_id').value = customer.id;
-                                regularCustomerSearchInput.value = customer.name + ' - ' + customer.phone;
-                                regularCustomerSearchResults.classList.add('hidden');
-                                applyCustomerDiscount(customer.id);
+                            itemDiv.className = 'customer-result-item p-3 hover:bg-indigo-50 cursor-pointer border-b border-gray-200 flex justify-between items-start';
+                            itemDiv.innerHTML = '<div><div class="font-medium text-gray-900">' + customer.name + '</div><div class="text-xs text-gray-600">' + customer.phone + '</div>' + discountText + '</div><div class="text-indigo-600 text-sm font-semibold ml-2">↵ Select</div>';
+                            itemDiv.addEventListener('mousedown', function(e) {
+                                e.preventDefault();
+                                selectCustomer(customer);
                             });
                             regularCustomerSearchResults.appendChild(itemDiv);
                         });
-                        regularCustomerSearchResults.classList.remove('hidden');
+                    }
+                    regularCustomerSearchResults.classList.remove('hidden');
+                });
+
+                regularCustomerSearchInput.addEventListener('keydown', function(e) {
+                    var items = getCustomerItems();
+                    if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        if (regularCustomerSearchResults.classList.contains('hidden') && this.value.trim()) {
+                            this.dispatchEvent(new Event('input'));
+                        }
+                        setCustomerHighlight(Math.min(highlightedCustomerIndex + 1, items.length - 1));
+                    } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        setCustomerHighlight(Math.max(highlightedCustomerIndex - 1, 0));
+                    } else if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (highlightedCustomerIndex >= 0 && items[highlightedCustomerIndex]) {
+                            items[highlightedCustomerIndex].dispatchEvent(new MouseEvent('mousedown'));
+                        } else if (items.length === 1) {
+                            items[0].dispatchEvent(new MouseEvent('mousedown'));
+                        }
+                    } else if (e.key === 'Escape') {
+                        regularCustomerSearchResults.classList.add('hidden');
+                        highlightedCustomerIndex = -1;
                     }
                 });
                 
-                // Hide results when clicking outside
                 document.addEventListener('click', function(e) {
                     if (!regularCustomerSearchInput.contains(e.target) && !regularCustomerSearchResults.contains(e.target)) {
                         regularCustomerSearchResults.classList.add('hidden');
+                        highlightedCustomerIndex = -1;
                     }
                 });
             }
@@ -719,10 +842,30 @@ $conn->close();
 
         <main class="md:ml-64 p-4 md:p-6 lg:p-8">
             <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-                <h2 class="text-2xl md:text-3xl font-bold text-gray-900">Order Details Management</h2>
-                <button onclick="openModal('create')" class="px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-all shadow-md hover:shadow-lg transform hover:scale-105">
-                    + Add New Order
-                </button>
+                <div>
+                    <h2 class="text-2xl md:text-3xl font-bold text-gray-900">Order Details Management</h2>
+                    <p class="text-sm text-gray-500 mt-1">
+                        <?php if ($viewMode === 'today'): ?>
+                            📅 Showing <strong>today's</strong> orders
+                        <?php else: ?>
+                            📋 Showing <strong>all</strong> orders
+                        <?php endif; ?>
+                    </p>
+                </div>
+                <div class="flex flex-wrap gap-3">
+                    <?php if ($viewMode === 'today'): ?>
+                        <a href="?view=all" class="px-5 py-2.5 bg-gray-700 text-white rounded-lg font-semibold hover:bg-gray-800 transition-all shadow-md text-sm flex items-center gap-2">
+                            📋 View All Orders
+                        </a>
+                    <?php else: ?>
+                        <a href="?" class="px-5 py-2.5 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-all shadow-md text-sm flex items-center gap-2">
+                            📅 Today Only
+                        </a>
+                    <?php endif; ?>
+                    <button onclick="openModal('create')" class="px-6 py-2.5 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-all shadow-md hover:shadow-lg">
+                        + Add New Order
+                    </button>
+                </div>
             </div>
 
             <?php if ($message): ?>
@@ -737,6 +880,7 @@ $conn->close();
                 <h3 class="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
                     <span class="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></span>
                     Pending Orders
+                    <span class="text-sm font-normal text-gray-400">(<?php echo $viewMode === 'today' ? 'Today' : 'All Time'; ?>)</span>
                 </h3>
                 <div class="bg-white rounded-xl shadow-md overflow-hidden">
                     <div class="overflow-x-auto">
@@ -744,7 +888,7 @@ $conn->close();
                             <thead class="bg-gradient-to-r from-yellow-500 to-orange-500 text-white">
                                 <tr>
                                     <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">ID</th>
-                                    <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Order Number</th>
+                                    <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Customer / Order No</th>
                                     <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Table</th>
                                     <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Order Date</th>
                                     <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Total</th>
@@ -761,7 +905,17 @@ $conn->close();
                                 ?>
                                 <tr class="hover:bg-yellow-50 transition-colors">
                                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo $row['id']; ?></td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900"><?php echo htmlspecialchars($row['order_number']); ?></td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                        <?php if (!empty($row['reg_customer_name'])): ?>
+                                            <div class="flex items-center gap-1">
+                                                <span class="text-indigo-600">👤</span>
+                                                <span class="font-semibold text-indigo-700"><?php echo htmlspecialchars($row['reg_customer_name']); ?></span>
+                                            </div>
+                                            <div class="text-xs text-gray-400 mt-0.5"><?php echo htmlspecialchars($row['reg_customer_phone'] ?? ''); ?></div>
+                                        <?php else: ?>
+                                            <span class="text-gray-700"><?php echo htmlspecialchars($row['order_number']); ?></span>
+                                        <?php endif; ?>
+                                    </td>
                                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600"><?php echo htmlspecialchars($row['table_number'] ?? 'N/A'); ?></td>
                                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                                         <?php echo $row['order_date'] ? date('M d, Y H:i', strtotime($row['order_date'])) : 'N/A'; ?>
@@ -816,14 +970,17 @@ $conn->close();
 
             <!-- All Orders Section -->
             <div>
-                <h3 class="text-xl font-bold text-gray-900 mb-4">All Orders</h3>
+                <h3 class="text-xl font-bold text-gray-900 mb-4">
+                    All Orders
+                    <span class="text-sm font-normal text-gray-400">(<?php echo $viewMode === 'today' ? 'Today' : 'All Time'; ?>)</span>
+                </h3>
                 <div class="bg-white rounded-xl shadow-md overflow-hidden">
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200">
                         <thead class="bg-gradient-to-r from-indigo-600 to-purple-600 text-white">
                             <tr>
                                 <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">ID</th>
-                                <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Order Number</th>
+                                <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Customer / Order No</th>
                                 <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Table</th>
                                 <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Order Date</th>
                                 <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Total</th>
@@ -836,7 +993,17 @@ $conn->close();
                             <?php while ($row = $orders->fetch_assoc()): ?>
                             <tr class="hover:bg-indigo-50 transition-colors">
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo $row['id']; ?></td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900"><?php echo htmlspecialchars($row['order_number']); ?></td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                    <?php if (!empty($row['reg_customer_name'])): ?>
+                                        <div class="flex items-center gap-1">
+                                            <span class="text-indigo-600">👤</span>
+                                            <span class="font-semibold text-indigo-700"><?php echo htmlspecialchars($row['reg_customer_name']); ?></span>
+                                        </div>
+                                        <div class="text-xs text-gray-400 mt-0.5"><?php echo htmlspecialchars($row['reg_customer_phone'] ?? ''); ?></div>
+                                    <?php else: ?>
+                                        <span class="text-gray-700"><?php echo htmlspecialchars($row['order_number']); ?></span>
+                                    <?php endif; ?>
+                                </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600"><?php echo htmlspecialchars($row['table_number'] ?? 'N/A'); ?></td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                                     <?php echo $row['order_date'] ? date('M d, Y H:i', strtotime($row['order_date'])) : 'N/A'; ?>
@@ -929,7 +1096,7 @@ $conn->close();
                             <input 
                                 type="text" 
                                 id="regular_customer_search" 
-                                placeholder="🔍 Search regular customer by name or phone..." 
+                                placeholder="Type name or phone… ↑↓ navigate · Enter select · Esc close" 
                                 class="w-full px-4 py-3 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
                                 autocomplete="off"
                             >
@@ -957,7 +1124,7 @@ $conn->close();
                             <input 
                                 type="text" 
                                 id="foodSearch" 
-                                placeholder="🔍 Search food items by name..." 
+                                placeholder="Type food name… ↑↓ navigate · Enter add · Esc close" 
                                 class="w-full px-4 py-3 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
                                 autocomplete="off"
                             >

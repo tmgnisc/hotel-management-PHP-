@@ -181,7 +181,7 @@ if (!isset($_SESSION['admin_logged_in'])) {
                         </div>
                         
                         <!-- Custom Date Range -->
-                        <div id="custom-date-range" class="hidden grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div id="custom-date-range" class="hidden grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 mb-2">Start Date</label>
                                 <input type="date" id="start_date" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
@@ -249,7 +249,7 @@ if (!isset($_SESSION['admin_logged_in'])) {
                 </div>
                 
                 <!-- Custom Date Range for Chart -->
-                <div id="chart-custom-range" class="hidden grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div id="chart-custom-range" class="hidden grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-2">Start Date</label>
                         <input type="date" id="chart_start_date" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
@@ -570,8 +570,9 @@ if (!isset($_SESSION['admin_logged_in'])) {
         }
         
         function showCustomChartRange() {
-            document.getElementById('chart-custom-range').classList.remove('hidden');
-            document.getElementById('chart-custom-range').classList.add('grid');
+            const r = document.getElementById('chart-custom-range');
+            r.classList.remove('hidden');
+            r.classList.add('grid');
             document.getElementById('chart-btn-custom').classList.remove('bg-gray-200', 'text-gray-700');
             document.getElementById('chart-btn-custom').classList.add('bg-indigo-600', 'text-white');
         }
