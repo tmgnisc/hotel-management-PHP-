@@ -261,6 +261,16 @@ $conn->close();
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+    </style>
     <script>
         var openModal, closeModal, deleteRecord, openTransactionModal, closeTransactionModal;
         var ordersList = <?php echo json_encode($ordersList); ?>;
@@ -362,15 +372,15 @@ $conn->close();
         })();
     </script>
 </head>
-<body class="bg-gray-50">
+<body class="bg-gray-50 overflow-x-hidden">
     <div class="min-h-screen">
         <?php include 'includes/nav.php'; ?>
 
         <main class="md:ml-64 p-4 md:p-6 lg:p-8">
-            <div class="max-w-7xl mx-auto">
+            <div class="w-full">
                 <!-- Header -->
                 <div class="mb-6 md:mb-8">
-                    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                    <div class="flex w-full flex-col md:flex-row md:items-center md:justify-between gap-4">
                         <div>
                             <h1 class="text-2xl md:text-3xl font-bold text-gray-900 mb-2">Regular Customers</h1>
                             <p class="text-gray-600">Manage your regular customers database</p>
@@ -393,8 +403,8 @@ $conn->close();
                 <?php endif; ?>
 
                 <!-- Customers Table -->
-                <div class="bg-white rounded-lg shadow-lg overflow-hidden">
-                    <div class="overflow-x-auto">
+                <div class="bg-white w-full rounded-lg shadow-lg overflow-hidden">
+                    <div class="overflow-x-auto hide-scrollbar">
                         <table class="min-w-full divide-y divide-gray-200">
                             <thead class="bg-gradient-to-r from-indigo-600 to-purple-600 text-white">
                                 <tr>
