@@ -15,6 +15,56 @@ $conn = getDBConnection();
 $message = '';
 $messageType = 'success';
 
+function formatOrderSerial($orderNumber, $orderId = null) {
+    if (!empty($orderNumber) && preg_match('/^\d{8}$/', (string)$orderNumber)) {
+        return (string)$orderNumber;
+    }
+
+    if (!empty($orderNumber) && preg_match('/\d+/', (string)$orderNumber, $matches)) {
+        return str_pad(substr($matches[0], -8), 8, '0', STR_PAD_LEFT);
+    }
+
+    if (!empty($orderId)) {
+        return str_pad((string)intval($orderId), 8, '0', STR_PAD_LEFT);
+    }
+
+    return '00000000';
+}
+
+function recalculateCustomerAmounts($conn, $customerId) {
+    $customerId = intval($customerId);
+    if ($customerId <= 0) {
+        return;
+    }
+
+    $sumStmt = $conn->prepare("SELECT
+        COALESCE(SUM(CASE WHEN transaction_type IN ('credit', 'order') THEN amount ELSE 0 END), 0) AS total_generated,
+        COALESCE(SUM(CASE WHEN transaction_type = 'payment' THEN amount ELSE 0 END), 0) AS total_paid
+        FROM customer_transactions
+        WHERE customer_id = ?");
+
+    if (!$sumStmt) {
+        return;
+    }
+
+    $sumStmt->bind_param("i", $customerId);
+    $sumStmt->execute();
+    $summary = $sumStmt->get_result()->fetch_assoc();
+    $sumStmt->close();
+
+    $totalGenerated = isset($summary['total_generated']) ? (float)$summary['total_generated'] : 0;
+    $totalPaid = isset($summary['total_paid']) ? (float)$summary['total_paid'] : 0;
+    $dueAmount = max(0, $totalGenerated - $totalPaid);
+    $totalAmount = max(0, $totalGenerated);
+
+    $updateStmt = $conn->prepare("UPDATE regular_customers SET due_amount = ?, total_amount = ? WHERE id = ?");
+    if ($updateStmt) {
+        $updateStmt->bind_param("ddi", $dueAmount, $totalAmount, $customerId);
+        $updateStmt->execute();
+        $updateStmt->close();
+    }
+}
+
 // Handle CRUD operations
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     if (isset($_POST['action'])) {
@@ -183,36 +233,76 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     } else {
                         throw new Exception("Error preparing transaction statement: " . $conn->error);
                     }
-                    
-                    // Update customer amounts
-                    if ($transaction_type == 'credit') {
-                        // Credit increases due amount
-                        $updateStmt = $conn->prepare("UPDATE regular_customers SET due_amount = due_amount + ?, total_amount = total_amount + ? WHERE id = ?");
-                    } elseif ($transaction_type == 'payment') {
-                        // Payment decreases due amount
-                        $updateStmt = $conn->prepare("UPDATE regular_customers SET due_amount = GREATEST(0, due_amount - ?) WHERE id = ?");
-                    } else {
-                        // Order increases both due and total
-                        $updateStmt = $conn->prepare("UPDATE regular_customers SET due_amount = due_amount + ?, total_amount = total_amount + ? WHERE id = ?");
-                    }
-                    
-                    if ($updateStmt) {
-                        if ($transaction_type == 'payment') {
-                            $updateStmt->bind_param("di", $amount, $customer_id);
-                        } else {
-                            $updateStmt->bind_param("ddi", $amount, $amount, $customer_id);
-                        }
-                        if (!$updateStmt->execute()) {
-                            throw new Exception("Error updating customer amounts: " . $updateStmt->error);
-                        }
-                        $updateStmt->close();
-                    } else {
-                        throw new Exception("Error preparing update statement: " . $conn->error);
-                    }
+
+                    // Recalculate amounts from all transactions for consistency
+                    recalculateCustomerAmounts($conn, $customer_id);
                     
                     // Commit transaction
                     $conn->commit();
                     $message = "Transaction added successfully!";
+                    $messageType = 'success';
+                    $conn->close();
+                    header('Location: regular_customers.php?msg=' . urlencode($message) . '&type=' . $messageType);
+                    exit;
+                } catch (Exception $e) {
+                    $conn->rollback();
+                    $message = $e->getMessage();
+                    $messageType = 'error';
+                }
+            }
+        } elseif ($_POST['action'] == 'update_transaction') {
+            $transaction_id = intval($_POST['transaction_id'] ?? 0);
+            $customer_id = intval($_POST['customer_id'] ?? 0);
+            $transaction_type = trim($_POST['transaction_type'] ?? '');
+            $amount = floatval($_POST['amount'] ?? 0);
+            $description = trim($_POST['description'] ?? '');
+            $order_id = !empty($_POST['order_id']) ? intval($_POST['order_id']) : null;
+            $reference_number = trim($_POST['reference_number'] ?? '');
+
+            $allowedTypes = ['credit', 'payment', 'order'];
+            if ($transaction_id <= 0 || $customer_id <= 0 || !in_array($transaction_type, $allowedTypes, true) || $amount <= 0) {
+                $message = "Please fill all required fields correctly for transaction update!";
+                $messageType = 'error';
+            } else {
+                $conn->begin_transaction();
+
+                try {
+                    $oldStmt = $conn->prepare("SELECT customer_id FROM customer_transactions WHERE id = ?");
+                    if (!$oldStmt) {
+                        throw new Exception("Error preparing existing transaction query: " . $conn->error);
+                    }
+
+                    $oldStmt->bind_param("i", $transaction_id);
+                    $oldStmt->execute();
+                    $oldTx = $oldStmt->get_result()->fetch_assoc();
+                    $oldStmt->close();
+
+                    if (!$oldTx) {
+                        throw new Exception("Transaction not found!");
+                    }
+
+                    $oldCustomerId = intval($oldTx['customer_id'] ?? 0);
+                    $reference_number = !empty($reference_number) ? $reference_number : null;
+                    $description = !empty($description) ? $description : null;
+
+                    $updateTxStmt = $conn->prepare("UPDATE customer_transactions SET customer_id = ?, transaction_type = ?, amount = ?, description = ?, order_id = ?, reference_number = ? WHERE id = ?");
+                    if (!$updateTxStmt) {
+                        throw new Exception("Error preparing transaction update: " . $conn->error);
+                    }
+
+                    $updateTxStmt->bind_param("isdsisi", $customer_id, $transaction_type, $amount, $description, $order_id, $reference_number, $transaction_id);
+                    if (!$updateTxStmt->execute()) {
+                        throw new Exception("Error updating transaction: " . $updateTxStmt->error);
+                    }
+                    $updateTxStmt->close();
+
+                    recalculateCustomerAmounts($conn, $oldCustomerId);
+                    if ($customer_id !== $oldCustomerId) {
+                        recalculateCustomerAmounts($conn, $customer_id);
+                    }
+
+                    $conn->commit();
+                    $message = "Transaction updated successfully!";
                     $messageType = 'success';
                     $conn->close();
                     header('Location: regular_customers.php?msg=' . urlencode($message) . '&type=' . $messageType);
@@ -248,6 +338,18 @@ if ($orders) {
     }
 }
 
+// Fetch all regular customer transactions for view/edit
+$allTransactions = $conn->query(" 
+    SELECT ct.*, rc.customer_name, rc.phone, o.order_number
+    FROM customer_transactions ct
+    LEFT JOIN regular_customers rc ON ct.customer_id = rc.id
+    LEFT JOIN order_details o ON ct.order_id = o.id
+    ORDER BY ct.created_at DESC, ct.id DESC
+");
+if (!$allTransactions) {
+    die("Error fetching customer transactions: " . $conn->error);
+}
+
 $conn->close();
 ?>
 <!DOCTYPE html>
@@ -272,7 +374,7 @@ $conn->close();
         }
     </style>
     <script>
-        var openModal, closeModal, deleteRecord, openTransactionModal, closeTransactionModal;
+    var openModal, closeModal, deleteRecord, openTransactionModal, closeTransactionModal, openEditTransactionModal, closeEditTransactionModal;
         var ordersList = <?php echo json_encode($ordersList); ?>;
         
         (function() {
@@ -354,6 +456,43 @@ $conn->close();
                     modal.classList.add('hidden');
                     modal.classList.remove('flex');
                     document.getElementById('transactionForm').reset();
+                }
+            };
+
+            openEditTransactionModal = function(data) {
+                var modal = document.getElementById('editTransactionModal');
+                if (!modal || !data) {
+                    return;
+                }
+
+                document.getElementById('editTransactionId').value = data.id || '';
+                document.getElementById('editTransactionCustomerId').value = data.customer_id || '';
+                document.getElementById('editTransactionCustomerName').textContent = data.customer_name || 'Unknown';
+                document.getElementById('editTransactionType').value = data.transaction_type || 'credit';
+                document.getElementById('editTransactionAmount').value = data.amount || '0';
+                document.getElementById('editTransactionReference').value = data.reference_number || '';
+                document.getElementById('editTransactionDescription').value = data.description || '';
+
+                var orderSelect = document.getElementById('editTransactionOrderId');
+                orderSelect.innerHTML = '<option value="">Select Order (Optional)</option>';
+                ordersList.forEach(function(order) {
+                    var option = document.createElement('option');
+                    option.value = order.id;
+                    option.textContent = order.order_number + ' - Rs ' + parseFloat(order.total_amount).toFixed(2) + ' (' + order.order_date + ')';
+                    orderSelect.appendChild(option);
+                });
+                orderSelect.value = data.order_id || '';
+
+                modal.classList.remove('hidden');
+                modal.classList.add('flex');
+            };
+
+            closeEditTransactionModal = function() {
+                var modal = document.getElementById('editTransactionModal');
+                if (modal) {
+                    modal.classList.add('hidden');
+                    modal.classList.remove('flex');
+                    document.getElementById('editTransactionForm').reset();
                 }
             };
             
@@ -466,6 +605,75 @@ $conn->close();
                                         <td colspan="10" class="px-6 py-8 text-center text-gray-500">
                                             No regular customers found. Click "Add New Customer" to create one.
                                         </td>
+                                    </tr>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- All Transactions Section -->
+                <div class="mt-8 bg-white w-full rounded-lg shadow-lg overflow-hidden">
+                    <div class="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-purple-600 to-indigo-600 text-white">
+                        <h2 class="text-lg font-bold">All Regular Customer Transactions</h2>
+                        <p class="text-xs text-purple-100 mt-1">Linked order transactions will appear here automatically.</p>
+                    </div>
+                    <div class="overflow-x-auto hide-scrollbar">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Txn ID</th>
+                                    <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Customer</th>
+                                    <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Type</th>
+                                    <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Amount</th>
+                                    <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Order</th>
+                                    <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Reference</th>
+                                    <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Created</th>
+                                    <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-200">
+                                <?php if ($allTransactions->num_rows > 0): ?>
+                                    <?php while ($tx = $allTransactions->fetch_assoc()): ?>
+                                        <?php
+                                        $txType = $tx['transaction_type'] ?? 'credit';
+                                        $typeClass = $txType === 'payment'
+                                            ? 'bg-green-100 text-green-800'
+                                            : ($txType === 'order' ? 'bg-indigo-100 text-indigo-800' : 'bg-yellow-100 text-yellow-800');
+                                        ?>
+                                        <tr class="hover:bg-indigo-50 transition-colors">
+                                            <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">#<?php echo intval($tx['id']); ?></td>
+                                            <td class="px-4 py-3 whitespace-nowrap text-sm">
+                                                <div class="font-semibold text-gray-900"><?php echo htmlspecialchars($tx['customer_name'] ?? 'N/A'); ?></div>
+                                                <div class="text-xs text-gray-500"><?php echo htmlspecialchars($tx['phone'] ?? ''); ?></div>
+                                            </td>
+                                            <td class="px-4 py-3 whitespace-nowrap text-sm">
+                                                <span class="px-2 py-1 rounded-full text-xs font-semibold uppercase <?php echo $typeClass; ?>">
+                                                    <?php echo htmlspecialchars($txType); ?>
+                                                </span>
+                                            </td>
+                                            <td class="px-4 py-3 whitespace-nowrap text-sm font-semibold text-gray-900">Rs <?php echo number_format((float)($tx['amount'] ?? 0), 2); ?></td>
+                                            <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">
+                                                <?php if (!empty($tx['order_id'])): ?>
+                                                    <a href="order_details.php" class="text-indigo-600 hover:text-indigo-800 font-semibold">
+                                                        #<?php echo htmlspecialchars(formatOrderSerial($tx['order_number'] ?? '', $tx['order_id'])); ?>
+                                                    </a>
+                                                <?php else: ?>
+                                                    <span class="text-gray-400">-</span>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-600"><?php echo htmlspecialchars($tx['reference_number'] ?? '-'); ?></td>
+                                            <td class="px-4 py-3 whitespace-nowrap text-xs text-gray-500"><?php echo !empty($tx['created_at']) ? date('M d, Y H:i', strtotime($tx['created_at'])) : 'N/A'; ?></td>
+                                            <td class="px-4 py-3 whitespace-nowrap text-sm">
+                                                <button onclick="openEditTransactionModal(<?php echo htmlspecialchars(json_encode($tx), ENT_QUOTES, 'UTF-8'); ?>)" class="px-3 py-1 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors text-xs">
+                                                    Edit
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    <?php endwhile; ?>
+                                <?php else: ?>
+                                    <tr>
+                                        <td colspan="8" class="px-4 py-6 text-center text-gray-500">No transactions found.</td>
                                     </tr>
                                 <?php endif; ?>
                             </tbody>
@@ -736,6 +944,71 @@ $conn->close();
                         onclick="closeTransactionModal()" 
                         class="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg font-semibold hover:bg-gray-300 transition-all duration-200"
                     >
+                        Cancel
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit Transaction Modal -->
+    <div id="editTransactionModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-lg shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div class="p-6 border-b border-gray-200">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h2 class="text-xl font-bold text-gray-900">Edit Transaction</h2>
+                        <p class="text-sm text-gray-600 mt-1">Customer: <span id="editTransactionCustomerName" class="font-semibold"></span></p>
+                    </div>
+                    <button onclick="closeEditTransactionModal()" class="text-gray-400 hover:text-gray-600 transition-colors">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <form id="editTransactionForm" method="POST" class="p-6 space-y-4">
+                <input type="hidden" name="action" value="update_transaction">
+                <input type="hidden" id="editTransactionId" name="transaction_id" value="">
+                <input type="hidden" id="editTransactionCustomerId" name="customer_id" value="">
+
+                <div>
+                    <label for="editTransactionType" class="block text-sm font-medium text-gray-700 mb-2">Transaction Type <span class="text-red-500">*</span></label>
+                    <select id="editTransactionType" name="transaction_type" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all">
+                        <option value="credit">Credit (Add to Due Amount)</option>
+                        <option value="payment">Payment (Reduce Due Amount)</option>
+                        <option value="order">Order (Add to Both Due & Total)</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label for="editTransactionAmount" class="block text-sm font-medium text-gray-700 mb-2">Amount <span class="text-red-500">*</span></label>
+                    <input type="number" id="editTransactionAmount" name="amount" required step="0.01" min="0.01" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all" placeholder="Enter amount">
+                </div>
+
+                <div>
+                    <label for="editTransactionOrderId" class="block text-sm font-medium text-gray-700 mb-2">Link to Order <span class="text-gray-500 text-xs">(Optional)</span></label>
+                    <select id="editTransactionOrderId" name="order_id" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all">
+                        <option value="">Select Order (Optional)</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label for="editTransactionReference" class="block text-sm font-medium text-gray-700 mb-2">Reference Number <span class="text-gray-500 text-xs">(Optional)</span></label>
+                    <input type="text" id="editTransactionReference" name="reference_number" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all" placeholder="Enter reference number">
+                </div>
+
+                <div>
+                    <label for="editTransactionDescription" class="block text-sm font-medium text-gray-700 mb-2">Description <span class="text-gray-500 text-xs">(Optional)</span></label>
+                    <textarea id="editTransactionDescription" name="description" rows="3" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all" placeholder="Enter transaction description"></textarea>
+                </div>
+
+                <div class="flex gap-3 pt-4">
+                    <button type="submit" class="flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-2 rounded-lg font-semibold hover:from-blue-700 hover:to-indigo-700 transition-all duration-200">
+                        Update Transaction
+                    </button>
+                    <button type="button" onclick="closeEditTransactionModal()" class="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg font-semibold hover:bg-gray-300 transition-all duration-200">
                         Cancel
                     </button>
                 </div>

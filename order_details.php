@@ -15,11 +15,182 @@ $conn = getDBConnection();
 $message = '';
 $messageType = 'success';
 
+function formatOrderSerial($orderNumber, $orderId = null) {
+    if (!empty($orderNumber) && preg_match('/^\d{8}$/', (string)$orderNumber)) {
+        return (string)$orderNumber;
+    }
+
+    if (!empty($orderNumber) && preg_match('/\d+/', (string)$orderNumber, $matches)) {
+        return str_pad(substr($matches[0], -8), 8, '0', STR_PAD_LEFT);
+    }
+
+    if (!empty($orderId)) {
+        return str_pad((string)intval($orderId), 8, '0', STR_PAD_LEFT);
+    }
+
+    return '00000000';
+}
+
+function recalculateRegularCustomerAmounts($conn, $customerId) {
+    $customerId = intval($customerId);
+    if ($customerId <= 0) {
+        return;
+    }
+
+    $sumStmt = $conn->prepare("SELECT
+        COALESCE(SUM(CASE WHEN transaction_type IN ('credit', 'order') THEN amount ELSE 0 END), 0) AS total_generated,
+        COALESCE(SUM(CASE WHEN transaction_type = 'payment' THEN amount ELSE 0 END), 0) AS total_paid
+        FROM customer_transactions
+        WHERE customer_id = ?");
+
+    if (!$sumStmt) {
+        return;
+    }
+
+    $sumStmt->bind_param("i", $customerId);
+    $sumStmt->execute();
+    $summary = $sumStmt->get_result()->fetch_assoc();
+    $sumStmt->close();
+
+    $totalGenerated = isset($summary['total_generated']) ? (float)$summary['total_generated'] : 0;
+    $totalPaid = isset($summary['total_paid']) ? (float)$summary['total_paid'] : 0;
+    $dueAmount = max(0, $totalGenerated - $totalPaid);
+    $totalAmount = max(0, $totalGenerated);
+
+    $updateStmt = $conn->prepare("UPDATE regular_customers SET due_amount = ?, total_amount = ? WHERE id = ?");
+    if ($updateStmt) {
+        $updateStmt->bind_param("ddi", $dueAmount, $totalAmount, $customerId);
+        $updateStmt->execute();
+        $updateStmt->close();
+    }
+}
+
+function syncOrderTransactionForRegularCustomer($conn, $orderId, $regularCustomerId, $orderAmount, $orderNumber, $paymentStatus = 'pending') {
+    $orderId = intval($orderId);
+    $regularCustomerId = intval($regularCustomerId);
+    $paymentStatus = strtolower(trim((string)$paymentStatus));
+    $isPaid = ($paymentStatus === 'paid');
+
+    if ($orderId <= 0) {
+        return;
+    }
+
+    $existingStmt = $conn->prepare("SELECT id, customer_id FROM customer_transactions WHERE order_id = ? AND transaction_type = 'order' ORDER BY id DESC LIMIT 1");
+    if (!$existingStmt) {
+        return;
+    }
+
+    $existingStmt->bind_param("i", $orderId);
+    $existingStmt->execute();
+    $existingTx = $existingStmt->get_result()->fetch_assoc();
+    $existingStmt->close();
+
+    $existingPaymentStmt = $conn->prepare("SELECT id, customer_id FROM customer_transactions WHERE order_id = ? AND transaction_type = 'payment' AND reference_number LIKE 'AUTO_PAY_%' ORDER BY id DESC LIMIT 1");
+    $existingPaymentTx = null;
+    if ($existingPaymentStmt) {
+        $existingPaymentStmt->bind_param("i", $orderId);
+        $existingPaymentStmt->execute();
+        $existingPaymentTx = $existingPaymentStmt->get_result()->fetch_assoc();
+        $existingPaymentStmt->close();
+    }
+
+    $oldCustomerId = intval($existingTx['customer_id'] ?? 0);
+    $oldPaymentCustomerId = intval($existingPaymentTx['customer_id'] ?? 0);
+    $affectedCustomerIds = [];
+
+    if ($regularCustomerId > 0) {
+        $txDescription = 'Auto order transaction for Order #' . formatOrderSerial($orderNumber, $orderId);
+        $txReference = formatOrderSerial($orderNumber, $orderId);
+    $autoPaymentDescription = 'Auto payment for Order #' . formatOrderSerial($orderNumber, $orderId);
+    $autoPaymentReference = 'AUTO_PAY_' . formatOrderSerial($orderNumber, $orderId);
+        $orderAmount = (float)$orderAmount;
+
+        if ($existingTx) {
+            $updateTxStmt = $conn->prepare("UPDATE customer_transactions SET customer_id = ?, amount = ?, description = ?, reference_number = ? WHERE id = ?");
+            if ($updateTxStmt) {
+                $updateTxStmt->bind_param("idssi", $regularCustomerId, $orderAmount, $txDescription, $txReference, $existingTx['id']);
+                $updateTxStmt->execute();
+                $updateTxStmt->close();
+            }
+        } else {
+            $insertTxStmt = $conn->prepare("INSERT INTO customer_transactions (customer_id, transaction_type, amount, description, order_id, reference_number) VALUES (?, 'order', ?, ?, ?, ?)");
+            if ($insertTxStmt) {
+                $insertTxStmt->bind_param("idsis", $regularCustomerId, $orderAmount, $txDescription, $orderId, $txReference);
+                $insertTxStmt->execute();
+                $insertTxStmt->close();
+            }
+        }
+
+        if ($isPaid) {
+            if ($existingPaymentTx) {
+                $updatePaymentTxStmt = $conn->prepare("UPDATE customer_transactions SET customer_id = ?, amount = ?, description = ?, reference_number = ? WHERE id = ?");
+                if ($updatePaymentTxStmt) {
+                    $updatePaymentTxStmt->bind_param("idssi", $regularCustomerId, $orderAmount, $autoPaymentDescription, $autoPaymentReference, $existingPaymentTx['id']);
+                    $updatePaymentTxStmt->execute();
+                    $updatePaymentTxStmt->close();
+                }
+            } else {
+                $insertPaymentTxStmt = $conn->prepare("INSERT INTO customer_transactions (customer_id, transaction_type, amount, description, order_id, reference_number) VALUES (?, 'payment', ?, ?, ?, ?)");
+                if ($insertPaymentTxStmt) {
+                    $insertPaymentTxStmt->bind_param("idsis", $regularCustomerId, $orderAmount, $autoPaymentDescription, $orderId, $autoPaymentReference);
+                    $insertPaymentTxStmt->execute();
+                    $insertPaymentTxStmt->close();
+                }
+            }
+        } else {
+            if ($existingPaymentTx) {
+                $deletePaymentTxStmt = $conn->prepare("DELETE FROM customer_transactions WHERE id = ?");
+                if ($deletePaymentTxStmt) {
+                    $deletePaymentTxStmt->bind_param("i", $existingPaymentTx['id']);
+                    $deletePaymentTxStmt->execute();
+                    $deletePaymentTxStmt->close();
+                }
+            }
+        }
+
+        if ($oldCustomerId > 0) {
+            $affectedCustomerIds[] = $oldCustomerId;
+        }
+        if ($oldPaymentCustomerId > 0) {
+            $affectedCustomerIds[] = $oldPaymentCustomerId;
+        }
+        $affectedCustomerIds[] = $regularCustomerId;
+    } else {
+        if ($existingTx) {
+            $deleteTxStmt = $conn->prepare("DELETE FROM customer_transactions WHERE id = ?");
+            if ($deleteTxStmt) {
+                $deleteTxStmt->bind_param("i", $existingTx['id']);
+                $deleteTxStmt->execute();
+                $deleteTxStmt->close();
+            }
+            if ($oldCustomerId > 0) {
+                $affectedCustomerIds[] = $oldCustomerId;
+            }
+        }
+
+        if ($existingPaymentTx) {
+            $deletePaymentTxStmt = $conn->prepare("DELETE FROM customer_transactions WHERE id = ?");
+            if ($deletePaymentTxStmt) {
+                $deletePaymentTxStmt->bind_param("i", $existingPaymentTx['id']);
+                $deletePaymentTxStmt->execute();
+                $deletePaymentTxStmt->close();
+            }
+            if ($oldPaymentCustomerId > 0) {
+                $affectedCustomerIds[] = $oldPaymentCustomerId;
+            }
+        }
+    }
+
+    foreach (array_unique($affectedCustomerIds) as $affectedCustomerId) {
+        recalculateRegularCustomerAmounts($conn, $affectedCustomerId);
+    }
+}
+
 // Handle CRUD operations
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     if (isset($_POST['action'])) {
         if ($_POST['action'] == 'create') {
-            $order_number = 'ORD' . date('Ymd') . rand(1000, 9999);
+            $order_number = 'TMP' . date('YmdHis') . rand(100, 999);
             $table_id = !empty($_POST['table_id']) ? intval($_POST['table_id']) : null;
             $regular_customer_id = !empty($_POST['regular_customer_id']) ? intval($_POST['regular_customer_id']) : null;
             // Auto-set to current date/time if not provided
@@ -76,11 +247,29 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 if ($stmt) {
                     $stmt->bind_param("siissddddssss", $order_number, $table_id, $regular_customer_id, $order_date, $itemsJson, $subtotal, $discount_percentage, $discount_amount, $total_amount, $order_status, $payment_status, $payment_method, $notes);
                     if ($stmt->execute()) {
+                        $newOrderId = $conn->insert_id;
+                        if ($newOrderId > 0) {
+                            $serialOrderNumber = str_pad((string)$newOrderId, 8, '0', STR_PAD_LEFT);
+                            $updateOrderNoStmt = $conn->prepare("UPDATE order_details SET order_number = ? WHERE id = ?");
+                            if ($updateOrderNoStmt) {
+                                $updateOrderNoStmt->bind_param("si", $serialOrderNumber, $newOrderId);
+                                $updateOrderNoStmt->execute();
+                                $updateOrderNoStmt->close();
+                                $order_number = $serialOrderNumber;
+                            }
+
+                            syncOrderTransactionForRegularCustomer($conn, $newOrderId, $regular_customer_id, $total_amount, $order_number, $payment_status);
+                        }
+                        $shouldPromptPrint = (strtolower($order_status) === 'completed' && strtolower($payment_status) === 'paid' && $newOrderId > 0);
                         $message = "Order created successfully!";
                         $messageType = 'success';
                         $stmt->close();
                         $conn->close();
-                        header('Location: order_details.php?msg=' . urlencode($message) . '&type=' . $messageType);
+                        $redirectUrl = 'order_details.php?msg=' . urlencode($message) . '&type=' . $messageType;
+                        if ($shouldPromptPrint) {
+                            $redirectUrl .= '&print_bill_prompt=1&bill_id=' . intval($newOrderId);
+                        }
+                        header('Location: ' . $redirectUrl);
                         exit;
                     } else {
                         $message = "Error executing query: " . $stmt->error;
@@ -104,6 +293,111 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $discount_percentage = floatval($_POST['discount_percentage'] ?? 0);
             $discount_amount = floatval($_POST['discount_amount'] ?? 0);
             $notes = trim($_POST['notes'] ?? '');
+
+            $isOrderStatusOnlyUpdate = false;
+            $isLinkedStatusOnlyUpdate = false;
+
+            if ($id <= 0) {
+                $message = "Invalid order ID!";
+                $messageType = 'error';
+            } else {
+                $existingOrderStmt = $conn->prepare("SELECT order_status, payment_status, regular_customer_id, total_amount, order_number FROM order_details WHERE id = ?");
+                if ($existingOrderStmt) {
+                    $existingOrderStmt->bind_param("i", $id);
+                    $existingOrderStmt->execute();
+                    $existingOrderResult = $existingOrderStmt->get_result();
+                    $existingOrder = $existingOrderResult ? $existingOrderResult->fetch_assoc() : null;
+                    $existingOrderStmt->close();
+
+                    if (!$existingOrder) {
+                        $message = "Order not found!";
+                        $messageType = 'error';
+                    } else {
+                        $existingOrderStatus = strtolower($existingOrder['order_status'] ?? '');
+                        $existingPaymentStatus = strtolower($existingOrder['payment_status'] ?? '');
+                        $existingRegularCustomerId = intval($existingOrder['regular_customer_id'] ?? 0);
+                        $existingTotalAmount = (float)($existingOrder['total_amount'] ?? 0);
+                        $existingOrderNumber = $existingOrder['order_number'] ?? '';
+
+                        if ($existingRegularCustomerId > 0) {
+                            $isLinkedEditLocked = ($existingOrderStatus === 'completed' || $existingPaymentStatus === 'paid');
+                            if ($isLinkedEditLocked) {
+                                $message = "Linked regular customer order is completed/paid, so editing is disabled!";
+                                $messageType = 'error';
+                            } else {
+                            $isLinkedStatusOnlyUpdate = true;
+                            $allowedOrderStatuses = ['pending', 'completed'];
+                            $allowedPaymentStatuses = ['pending', 'paid', 'cancelled'];
+
+                            if (!in_array($order_status, $allowedOrderStatuses, true)) {
+                                $order_status = 'pending';
+                            }
+                            if (!in_array($payment_status, $allowedPaymentStatuses, true)) {
+                                $payment_status = 'pending';
+                            }
+
+                            $linkedStatusStmt = $conn->prepare("UPDATE order_details SET order_status = ?, payment_status = ? WHERE id = ?");
+                            if ($linkedStatusStmt) {
+                                $linkedStatusStmt->bind_param("ssi", $order_status, $payment_status, $id);
+                                if ($linkedStatusStmt->execute()) {
+                                    syncOrderTransactionForRegularCustomer($conn, $id, $existingRegularCustomerId, $existingTotalAmount, $existingOrderNumber, $payment_status);
+
+                                    $message = "Order and payment status updated successfully!";
+                                    $messageType = 'success';
+                                    $linkedStatusStmt->close();
+                                    $conn->close();
+                                    header('Location: order_details.php?msg=' . urlencode($message) . '&type=' . $messageType);
+                                    exit;
+                                } else {
+                                    $message = "Error updating statuses: " . $linkedStatusStmt->error;
+                                    $messageType = 'error';
+                                }
+                                $linkedStatusStmt->close();
+                            } else {
+                                $message = "Error preparing linked status update: " . $conn->error;
+                                $messageType = 'error';
+                            }
+                            }
+                        }
+
+                        $isOrderStatusOnlyUpdate = ($existingOrderStatus === 'pending');
+
+                        if (!$isLinkedStatusOnlyUpdate && $isOrderStatusOnlyUpdate) {
+                            $allowedOrderStatuses = ['pending', 'completed'];
+                            if (!in_array($order_status, $allowedOrderStatuses, true)) {
+                                $order_status = 'pending';
+                            }
+
+                            $orderStatusOnlyStmt = $conn->prepare("UPDATE order_details SET order_status = ? WHERE id = ?");
+                            if ($orderStatusOnlyStmt) {
+                                $orderStatusOnlyStmt->bind_param("si", $order_status, $id);
+                                if ($orderStatusOnlyStmt->execute()) {
+                                    $message = "Order status updated successfully!";
+                                    $messageType = 'success';
+                                    $orderStatusOnlyStmt->close();
+                                    $conn->close();
+                                    header('Location: order_details.php?msg=' . urlencode($message) . '&type=' . $messageType);
+                                    exit;
+                                } else {
+                                    $message = "Error updating order status: " . $orderStatusOnlyStmt->error;
+                                    $messageType = 'error';
+                                }
+                                $orderStatusOnlyStmt->close();
+                            } else {
+                                $message = "Error preparing order status update: " . $conn->error;
+                                $messageType = 'error';
+                            }
+                        }
+                    }
+                } else {
+                    $message = "Error preparing order fetch: " . $conn->error;
+                    $messageType = 'error';
+                }
+            }
+
+            if ($messageType === 'error' && !empty($message)) {
+                // Stop further full update processing when validation or order-status-only update prep failed
+            } elseif (!$isOrderStatusOnlyUpdate && !$isLinkedStatusOnlyUpdate) {
             
             // Process food items
             $items = [];
@@ -150,6 +444,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 if ($stmt) {
                     $stmt->bind_param("iissddddssssi", $table_id, $regular_customer_id, $order_date, $itemsJson, $subtotal, $discount_percentage, $discount_amount, $total_amount, $order_status, $payment_status, $payment_method, $notes, $id);
                     if ($stmt->execute()) {
+                        $orderNoStmt = $conn->prepare("SELECT order_number FROM order_details WHERE id = ?");
+                        $currentOrderNumber = '';
+                        if ($orderNoStmt) {
+                            $orderNoStmt->bind_param("i", $id);
+                            $orderNoStmt->execute();
+                            $orderNoRow = $orderNoStmt->get_result()->fetch_assoc();
+                            $currentOrderNumber = $orderNoRow['order_number'] ?? '';
+                            $orderNoStmt->close();
+                        }
+
+                        syncOrderTransactionForRegularCustomer($conn, $id, $regular_customer_id, $total_amount, $currentOrderNumber, $payment_status);
+
                         $message = "Order updated successfully!";
                         $messageType = 'success';
                         $stmt->close();
@@ -166,26 +472,52 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     $messageType = 'error';
                 }
             }
+            }
         } elseif ($_POST['action'] == 'delete') {
             $id = intval($_POST['id'] ?? 0);
             if ($id > 0) {
-                $stmt = $conn->prepare("DELETE FROM order_details WHERE id=?");
-                if ($stmt) {
-                    $stmt->bind_param("i", $id);
-                    if ($stmt->execute()) {
-                        $message = "Order deleted successfully!";
-                        $messageType = 'success';
-                        $stmt->close();
-                        $conn->close();
-                        header('Location: order_details.php?msg=' . urlencode($message) . '&type=' . $messageType);
-                        exit;
-                    } else {
-                        $message = "Error deleting: " . $stmt->error;
+                $checkDeleteStmt = $conn->prepare("SELECT order_status, payment_status FROM order_details WHERE id = ?");
+                if ($checkDeleteStmt) {
+                    $checkDeleteStmt->bind_param("i", $id);
+                    $checkDeleteStmt->execute();
+                    $checkDeleteResult = $checkDeleteStmt->get_result();
+                    $deleteRow = $checkDeleteResult ? $checkDeleteResult->fetch_assoc() : null;
+                    $checkDeleteStmt->close();
+
+                    if (!$deleteRow) {
+                        $message = "Order not found!";
                         $messageType = 'error';
+                    } else {
+                        $isPaidCompleted = (strtolower($deleteRow['order_status'] ?? '') === 'completed' && strtolower($deleteRow['payment_status'] ?? '') === 'paid');
+                        if ($isPaidCompleted) {
+                            $message = "Completed and paid orders cannot be deleted!";
+                            $messageType = 'error';
+                        } else {
+                            syncOrderTransactionForRegularCustomer($conn, $id, 0, 0, '', 'pending');
+
+                            $stmt = $conn->prepare("DELETE FROM order_details WHERE id=?");
+                            if ($stmt) {
+                                $stmt->bind_param("i", $id);
+                                if ($stmt->execute()) {
+                                    $message = "Order deleted successfully!";
+                                    $messageType = 'success';
+                                    $stmt->close();
+                                    $conn->close();
+                                    header('Location: order_details.php?msg=' . urlencode($message) . '&type=' . $messageType);
+                                    exit;
+                                } else {
+                                    $message = "Error deleting: " . $stmt->error;
+                                    $messageType = 'error';
+                                }
+                                $stmt->close();
+                            } else {
+                                $message = "Error preparing delete statement: " . $conn->error;
+                                $messageType = 'error';
+                            }
+                        }
                     }
-                    $stmt->close();
                 } else {
-                    $message = "Error preparing delete statement: " . $conn->error;
+                    $message = "Error preparing delete check: " . $conn->error;
                     $messageType = 'error';
                 }
             }
@@ -199,10 +531,31 @@ if (isset($_GET['msg'])) {
     $messageType = $_GET['type'] ?? 'success';
 }
 
-// View mode: 'today' (default) or 'all'
-$viewMode = (isset($_GET['view']) && $_GET['view'] === 'all') ? 'all' : 'today';
-$todayFilter = "AND DATE(o.order_date) = CURDATE()";
-$dateWhereClause = ($viewMode === 'all') ? '' : $todayFilter;
+// View mode: 'today' (default), 'yesterday', or 'all'
+$requestedView = $_GET['view'] ?? 'today';
+$allowedViews = ['today', 'yesterday', 'all'];
+$viewMode = in_array($requestedView, $allowedViews, true) ? $requestedView : 'today';
+
+$pendingDateFilters = [
+    'today' => "AND DATE(o.order_date) = CURDATE()",
+    'yesterday' => "AND DATE(o.order_date) = DATE_SUB(CURDATE(), INTERVAL 1 DAY)",
+    'all' => ''
+];
+$dateWhereClause = $pendingDateFilters[$viewMode] ?? $pendingDateFilters['today'];
+
+$allDateFilters = [
+    'today' => "WHERE DATE(o.order_date) = CURDATE()",
+    'yesterday' => "WHERE DATE(o.order_date) = DATE_SUB(CURDATE(), INTERVAL 1 DAY)",
+    'all' => ''
+];
+$allDateFilter = $allDateFilters[$viewMode] ?? $allDateFilters['today'];
+
+$viewLabelMap = [
+    'today' => 'Today',
+    'yesterday' => 'Yesterday',
+    'all' => 'All Time'
+];
+$viewLabel = $viewLabelMap[$viewMode] ?? 'Today';
 
 // Fetch pending orders separately
 // Show orders as pending if: order_status is pending OR (order_status is completed AND payment_status is pending)
@@ -213,21 +566,20 @@ $pendingOrders = $conn->query("
     LEFT JOIN regular_customers rc ON o.regular_customer_id = rc.id
     WHERE (o.order_status = 'pending' OR (o.order_status = 'completed' AND o.payment_status = 'pending'))
     $dateWhereClause
-    ORDER BY o.order_date DESC
+    ORDER BY o.id DESC
 ");
 if (!$pendingOrders) {
     die("Error fetching pending orders: " . $conn->error);
 }
 
 // Fetch all orders with table information
-$allDateFilter = ($viewMode === 'all') ? '' : "WHERE DATE(o.order_date) = CURDATE()";
 $orders = $conn->query("
     SELECT o.*, t.table_number, rc.customer_name AS reg_customer_name, rc.phone AS reg_customer_phone
     FROM order_details o 
     LEFT JOIN tables t ON o.table_id = t.id 
     LEFT JOIN regular_customers rc ON o.regular_customer_id = rc.id
     $allDateFilter
-    ORDER BY o.order_date DESC
+    ORDER BY o.id DESC
 ");
 if (!$orders) {
     die("Error fetching orders: " . $conn->error);
@@ -290,6 +642,64 @@ $conn->close();
                     discount_amount: <?php echo $customer['discount_amount'] ?? 0; ?>
                 };
             <?php endwhile; ?>
+
+            function setOrderStatusOnlyEditMode(isOrderStatusOnly, allowPaymentStatus, noticeText) {
+                var orderStatusOnlyInput = document.getElementById('order_status_only_update');
+                var orderStatusOnlyNotice = document.getElementById('orderStatusOnlyNotice');
+                allowPaymentStatus = !!allowPaymentStatus;
+                noticeText = noticeText || 'This order is pending. Only <strong>Order Status</strong> can be edited.';
+
+                if (orderStatusOnlyInput) {
+                    orderStatusOnlyInput.value = isOrderStatusOnly ? '1' : '0';
+                }
+
+                if (orderStatusOnlyNotice) {
+                    if (isOrderStatusOnly) {
+                        orderStatusOnlyNotice.innerHTML = noticeText;
+                        orderStatusOnlyNotice.classList.remove('hidden');
+                    } else {
+                        orderStatusOnlyNotice.classList.add('hidden');
+                    }
+                }
+
+                var fieldIds = [
+                    'table_id',
+                    'regular_customer_search',
+                    'order_date',
+                    'foodSearch',
+                    'discount_percentage',
+                    'discount_amount',
+                    'payment_status',
+                    'payment_method',
+                    'notes'
+                ];
+
+                fieldIds.forEach(function(id) {
+                    var field = document.getElementById(id);
+                    if (field) {
+                        field.disabled = isOrderStatusOnly;
+                    }
+                });
+
+                var orderStatusField = document.getElementById('order_status');
+                if (orderStatusField) {
+                    orderStatusField.disabled = false;
+                }
+
+                var paymentStatusField = document.getElementById('payment_status');
+                if (paymentStatusField) {
+                    paymentStatusField.disabled = isOrderStatusOnly ? !allowPaymentStatus : false;
+                }
+
+                var foodItemsContainer = document.getElementById('foodItemsContainer');
+                if (foodItemsContainer) {
+                    var itemControls = foodItemsContainer.querySelectorAll('input, button, select, textarea');
+                    itemControls.forEach(function(ctrl) {
+                        ctrl.disabled = isOrderStatusOnly;
+                    });
+                    foodItemsContainer.classList.toggle('opacity-60', isOrderStatusOnly);
+                }
+            }
             
             openModal = function(action, data) {
                 var modal = document.getElementById('modal');
@@ -299,11 +709,21 @@ $conn->close();
                     console.error('Modal or form not found');
                     return;
                 }
+
+                var isPaidStatus = String((data && data.payment_status) || '').toLowerCase() === 'paid';
+                var isCompletedStatus = String((data && data.order_status) || '').toLowerCase() === 'completed';
+                var isLinkedRegularCustomer = !!(data && data.regular_customer_id);
+
+                if (action === 'edit' && data && ((isLinkedRegularCustomer && (isPaidStatus || isCompletedStatus)) || (!isLinkedRegularCustomer && isPaidStatus))) {
+                    alert('This order is already paid, so editing is disabled. You can print the bill.');
+                    return;
+                }
                 
                 // Set form action: 'create' for new, 'update' for edit
                 var formAction = action === 'edit' ? 'update' : 'create';
                 document.getElementById('formAction').value = formAction;
                 document.getElementById('modalTitle').textContent = action === 'create' ? 'Add New Order' : 'Edit Order';
+                setOrderStatusOnlyEditMode(false, false, '');
                 
                 // Clear food items container
                 var foodItemsContainer = document.getElementById('foodItemsContainer');
@@ -333,6 +753,21 @@ $conn->close();
                     document.getElementById('discount_percentage').value = data.discount_percentage || '0';
                     document.getElementById('discount_amount').value = data.discount_amount || '0';
                     document.getElementById('notes').value = data.notes || '';
+
+                    var currentOrderStatus = String(data.order_status || '').toLowerCase();
+                    var isLinkedRegularCustomer = !!data.regular_customer_id;
+                    var orderStatusOnlyMode = (currentOrderStatus === 'pending');
+
+                    if (isLinkedRegularCustomer) {
+                        setOrderStatusOnlyEditMode(true, true, 'This order is linked to a regular customer. Only <strong>Order Status</strong> and <strong>Payment Status</strong> can be edited.');
+                        document.getElementById('modalTitle').textContent = 'Edit Order & Payment Status';
+                    } else {
+                        setOrderStatusOnlyEditMode(orderStatusOnlyMode, false, 'This order is pending. Only <strong>Order Status</strong> can be edited.');
+                    }
+
+                    if (!isLinkedRegularCustomer && orderStatusOnlyMode) {
+                        document.getElementById('modalTitle').textContent = 'Edit Order Status';
+                    }
                     
                     // Load existing items
                     if (data.items) {
@@ -818,6 +1253,26 @@ $conn->close();
             
             // Make functions globally accessible
             window.applyCustomerDiscount = applyCustomerDiscount;
+
+            function handleAutoBillPrintPrompt() {
+                var urlParams = new URLSearchParams(window.location.search);
+                var shouldPrompt = urlParams.get('print_bill_prompt') === '1';
+                var billId = parseInt(urlParams.get('bill_id') || '0', 10);
+
+                if (!shouldPrompt || billId <= 0) {
+                    return;
+                }
+
+                var shouldPrint = confirm('Order is completed and paid. Print this bill now?');
+                if (shouldPrint) {
+                    window.open('order_bill.php?id=' + billId, '_blank');
+                }
+
+                var cleanUrl = new URL(window.location.href);
+                cleanUrl.searchParams.delete('print_bill_prompt');
+                cleanUrl.searchParams.delete('bill_id');
+                window.history.replaceState({}, document.title, cleanUrl.pathname + cleanUrl.search);
+            }
             
             // Initialize search when DOM is ready
             if (document.readyState === 'loading') {
@@ -825,12 +1280,14 @@ $conn->close();
                     setTimeout(function() {
                         initFoodSearch();
                         initRegularCustomerSearch();
+                        handleAutoBillPrintPrompt();
                     }, 200);
                 });
             } else {
                 setTimeout(function() {
                     initFoodSearch();
                     initRegularCustomerSearch();
+                    handleAutoBillPrintPrompt();
                 }, 200);
             }
         })();
@@ -847,20 +1304,42 @@ $conn->close();
                     <p class="text-sm text-gray-500 mt-1">
                         <?php if ($viewMode === 'today'): ?>
                             📅 Showing <strong>today's</strong> orders
+                        <?php elseif ($viewMode === 'yesterday'): ?>
+                            🕘 Showing <strong>yesterday's</strong> orders
                         <?php else: ?>
                             📋 Showing <strong>all</strong> orders
                         <?php endif; ?>
                     </p>
                 </div>
                 <div class="flex flex-wrap gap-3">
-                    <?php if ($viewMode === 'today'): ?>
+                    <?php if ($viewMode !== 'today'): ?>
+                        <a href="?view=today" class="px-5 py-2.5 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-all shadow-md text-sm flex items-center gap-2">
+                            📅 Today Orders
+                        </a>
+                    <?php else: ?>
+                        <span class="px-5 py-2.5 bg-blue-100 text-blue-700 rounded-lg font-semibold shadow-sm text-sm flex items-center gap-2 cursor-default">
+                            📅 Today Orders
+                        </span>
+                    <?php endif; ?>
+
+                    <?php if ($viewMode !== 'yesterday'): ?>
+                        <a href="?view=yesterday" class="px-5 py-2.5 bg-amber-600 text-white rounded-lg font-semibold hover:bg-amber-700 transition-all shadow-md text-sm flex items-center gap-2">
+                            🕘 Yesterday Orders
+                        </a>
+                    <?php else: ?>
+                        <span class="px-5 py-2.5 bg-amber-100 text-amber-700 rounded-lg font-semibold shadow-sm text-sm flex items-center gap-2 cursor-default">
+                            🕘 Yesterday Orders
+                        </span>
+                    <?php endif; ?>
+
+                    <?php if ($viewMode !== 'all'): ?>
                         <a href="?view=all" class="px-5 py-2.5 bg-gray-700 text-white rounded-lg font-semibold hover:bg-gray-800 transition-all shadow-md text-sm flex items-center gap-2">
                             📋 View All Orders
                         </a>
                     <?php else: ?>
-                        <a href="?" class="px-5 py-2.5 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-all shadow-md text-sm flex items-center gap-2">
-                            📅 Today Only
-                        </a>
+                        <span class="px-5 py-2.5 bg-gray-200 text-gray-700 rounded-lg font-semibold shadow-sm text-sm flex items-center gap-2 cursor-default">
+                            📋 View All Orders
+                        </span>
                     <?php endif; ?>
                     <button onclick="openModal('create')" class="px-6 py-2.5 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-all shadow-md hover:shadow-lg">
                         + Add New Order
@@ -880,7 +1359,7 @@ $conn->close();
                 <h3 class="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
                     <span class="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></span>
                     Pending Orders
-                    <span class="text-sm font-normal text-gray-400">(<?php echo $viewMode === 'today' ? 'Today' : 'All Time'; ?>)</span>
+                    <span class="text-sm font-normal text-gray-400">(<?php echo htmlspecialchars($viewLabel); ?>)</span>
                 </h3>
                 <div class="bg-white rounded-xl shadow-md overflow-hidden">
                     <div class="overflow-x-auto">
@@ -913,7 +1392,7 @@ $conn->close();
                                             </div>
                                             <div class="text-xs text-gray-400 mt-0.5"><?php echo htmlspecialchars($row['reg_customer_phone'] ?? ''); ?></div>
                                         <?php else: ?>
-                                            <span class="text-gray-700"><?php echo htmlspecialchars($row['order_number']); ?></span>
+                                            <span class="text-gray-700"><?php echo htmlspecialchars(formatOrderSerial($row['order_number'] ?? '', $row['id'] ?? null)); ?></span>
                                         <?php endif; ?>
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600"><?php echo htmlspecialchars($row['table_number'] ?? 'N/A'); ?></td>
@@ -943,14 +1422,31 @@ $conn->close();
                                         </div>
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap text-sm font-medium flex flex-wrap gap-2">
-                                        <button onclick="openModal('edit', <?php echo htmlspecialchars(json_encode($row)); ?>)" class="px-3 py-1 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors text-xs">
-                                            Edit
-                                        </button>
-                                        <button onclick="deleteRecord(<?php echo $row['id']; ?>)" class="px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors text-xs">
-                                            Delete
-                                        </button>
-                                        <a href="order_bill.php?id=<?php echo $row['id']; ?>" target="_blank" class="px-3 py-1 bg-emerald-500 text-white rounded-md hover:bg-emerald-600 transition-colors text-xs inline-flex items-center gap-1">
-                                            🧾 Bill
+                                        <?php $isPaid = (($row['payment_status'] ?? '') === 'paid'); ?>
+                                        <?php $isRegularCustomerLinked = !empty($row['regular_customer_id']); ?>
+                                        <?php $isCompleted = (($row['order_status'] ?? '') === 'completed'); ?>
+                                        <?php $isLinkedEditLocked = ($isRegularCustomerLinked && ($isPaid || $isCompleted)); ?>
+                                        <?php $isDeleteLocked = ($isPaid && $isCompleted); ?>
+                                        <?php if (($isPaid && !$isRegularCustomerLinked) || $isLinkedEditLocked): ?>
+                                            <button type="button" disabled class="px-3 py-1 bg-gray-300 text-gray-600 rounded-md cursor-not-allowed opacity-70 text-xs" title="Paid orders cannot be edited">
+                                                Edit
+                                            </button>
+                                        <?php else: ?>
+                                            <button onclick="openModal('edit', <?php echo htmlspecialchars(json_encode($row)); ?>)" class="px-3 py-1 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors text-xs">
+                                                Edit
+                                            </button>
+                                        <?php endif; ?>
+                                        <?php if ($isDeleteLocked): ?>
+                                            <button type="button" disabled class="px-3 py-1 bg-gray-300 text-gray-600 rounded-md cursor-not-allowed opacity-70 text-xs" title="Completed and paid orders cannot be deleted">
+                                                Delete
+                                            </button>
+                                        <?php else: ?>
+                                            <button onclick="deleteRecord(<?php echo $row['id']; ?>)" class="px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors text-xs">
+                                                Delete
+                                            </button>
+                                        <?php endif; ?>
+                                        <a href="order_bill.php?id=<?php echo $row['id']; ?>" target="_blank" class="px-3 py-1 bg-emerald-500 text-white rounded-md hover:bg-emerald-600 transition-colors text-xs inline-flex items-center gap-1 <?php echo $isPaid ? 'ring-2 ring-emerald-300' : ''; ?>">
+                                            <?php echo $isPaid ? '🧾 Print Bill' : '🧾 Bill'; ?>
                                         </a>
                                     </td>
                                 </tr>
@@ -972,7 +1468,7 @@ $conn->close();
             <div>
                 <h3 class="text-xl font-bold text-gray-900 mb-4">
                     All Orders
-                    <span class="text-sm font-normal text-gray-400">(<?php echo $viewMode === 'today' ? 'Today' : 'All Time'; ?>)</span>
+                    <span class="text-sm font-normal text-gray-400">(<?php echo htmlspecialchars($viewLabel); ?>)</span>
                 </h3>
                 <div class="bg-white rounded-xl shadow-md overflow-hidden">
                 <div class="overflow-x-auto">
@@ -1001,7 +1497,7 @@ $conn->close();
                                         </div>
                                         <div class="text-xs text-gray-400 mt-0.5"><?php echo htmlspecialchars($row['reg_customer_phone'] ?? ''); ?></div>
                                     <?php else: ?>
-                                        <span class="text-gray-700"><?php echo htmlspecialchars($row['order_number']); ?></span>
+                                        <span class="text-gray-700"><?php echo htmlspecialchars(formatOrderSerial($row['order_number'] ?? '', $row['id'] ?? null)); ?></span>
                                     <?php endif; ?>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600"><?php echo htmlspecialchars($row['table_number'] ?? 'N/A'); ?></td>
@@ -1044,14 +1540,31 @@ $conn->close();
                                     </div>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium flex flex-wrap gap-2">
-                                    <button onclick="openModal('edit', <?php echo htmlspecialchars(json_encode($row)); ?>)" class="px-3 py-1 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors text-xs">
-                                        Edit
-                                    </button>
-                                    <button onclick="deleteRecord(<?php echo $row['id']; ?>)" class="px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors text-xs">
-                                        Delete
-                                    </button>
-                                    <a href="order_bill.php?id=<?php echo $row['id']; ?>" target="_blank" class="px-3 py-1 bg-emerald-500 text-white rounded-md hover:bg-emerald-600 transition-colors text-xs inline-flex items-center gap-1">
-                                        🧾 Bill
+                                    <?php $isPaid = (($row['payment_status'] ?? '') === 'paid'); ?>
+                                    <?php $isRegularCustomerLinked = !empty($row['regular_customer_id']); ?>
+                                    <?php $isCompleted = (($row['order_status'] ?? '') === 'completed'); ?>
+                                    <?php $isLinkedEditLocked = ($isRegularCustomerLinked && ($isPaid || $isCompleted)); ?>
+                                    <?php $isDeleteLocked = ($isPaid && $isCompleted); ?>
+                                    <?php if (($isPaid && !$isRegularCustomerLinked) || $isLinkedEditLocked): ?>
+                                        <button type="button" disabled class="px-3 py-1 bg-gray-300 text-gray-600 rounded-md cursor-not-allowed opacity-70 text-xs" title="Paid orders cannot be edited">
+                                            Edit
+                                        </button>
+                                    <?php else: ?>
+                                        <button onclick="openModal('edit', <?php echo htmlspecialchars(json_encode($row)); ?>)" class="px-3 py-1 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors text-xs">
+                                            Edit
+                                        </button>
+                                    <?php endif; ?>
+                                    <?php if ($isDeleteLocked): ?>
+                                        <button type="button" disabled class="px-3 py-1 bg-gray-300 text-gray-600 rounded-md cursor-not-allowed opacity-70 text-xs" title="Completed and paid orders cannot be deleted">
+                                            Delete
+                                        </button>
+                                    <?php else: ?>
+                                        <button onclick="deleteRecord(<?php echo $row['id']; ?>)" class="px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors text-xs">
+                                            Delete
+                                        </button>
+                                    <?php endif; ?>
+                                    <a href="order_bill.php?id=<?php echo $row['id']; ?>" target="_blank" class="px-3 py-1 bg-emerald-500 text-white rounded-md hover:bg-emerald-600 transition-colors text-xs inline-flex items-center gap-1 <?php echo $isPaid ? 'ring-2 ring-emerald-300' : ''; ?>">
+                                        <?php echo $isPaid ? '🧾 Print Bill' : '🧾 Bill'; ?>
                                     </a>
                                 </td>
                             </tr>
@@ -1074,6 +1587,11 @@ $conn->close();
             <form method="POST" id="orderForm" class="space-y-4">
                 <input type="hidden" name="action" id="formAction" value="create">
                 <input type="hidden" name="id" id="formId">
+                <input type="hidden" name="order_status_only_update" id="order_status_only_update" value="0">
+
+                <div id="orderStatusOnlyNotice" class="hidden p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800">
+                    This order is pending. Only <strong>Order Status</strong> can be edited.
+                </div>
                 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
