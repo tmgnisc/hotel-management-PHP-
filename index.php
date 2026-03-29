@@ -107,6 +107,9 @@ if (!isset($_SESSION['admin_logged_in'])) {
                         <button onclick="loadProfit('today')" id="profit-btn-today" class="profit-period-btn px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium text-sm transition-all">
                             Today
                         </button>
+                        <button onclick="loadProfit('yesterday')" id="profit-btn-yesterday" class="profit-period-btn px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium text-sm transition-all">
+                            Yesterday
+                        </button>
                         <button onclick="loadProfit('7days')" id="profit-btn-7days" class="profit-period-btn px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium text-sm transition-all">
                             Last 7 Days
                         </button>
@@ -169,6 +172,9 @@ if (!isset($_SESSION['admin_logged_in'])) {
                             <button onclick="setPeriod('today')" id="btn-today" class="px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-all text-sm period-btn">
                                 Today
                             </button>
+                            <button onclick="setPeriod('yesterday')" id="btn-yesterday" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300 transition-all text-sm period-btn">
+                                Yesterday
+                            </button>
                             <button onclick="setPeriod('7days')" id="btn-7days" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300 transition-all text-sm period-btn">
                                 Last 7 Days
                             </button>
@@ -197,11 +203,11 @@ if (!isset($_SESSION['admin_logged_in'])) {
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <button onclick="exportReport('orders')" class="px-6 py-3 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-lg font-semibold hover:from-green-700 hover:to-green-800 transition-all shadow-lg hover:shadow-xl flex items-center justify-center gap-2">
                             <span>📋</span>
-                            <span>Export Order Details</span>
+                            <span>Export Order Details (Excel)</span>
                         </button>
                         <button onclick="exportReport('bookings')" class="px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg font-semibold hover:from-blue-700 hover:to-blue-800 transition-all shadow-lg hover:shadow-xl flex items-center justify-center gap-2">
                             <span>📅</span>
-                            <span>Export Booking Details</span>
+                            <span>Export Booking Details (Excel)</span>
                         </button>
                     </div>
                 </div>
@@ -235,6 +241,9 @@ if (!isset($_SESSION['admin_logged_in'])) {
                     <div class="mt-4 md:mt-0 flex flex-wrap gap-2">
                         <button onclick="loadChart('today')" id="chart-btn-today" class="px-3 py-1.5 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-all text-xs chart-period-btn">
                             Today
+                        </button>
+                        <button onclick="loadChart('yesterday')" id="chart-btn-yesterday" class="px-3 py-1.5 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300 transition-all text-xs chart-period-btn">
+                            Yesterday
                         </button>
                         <button onclick="loadChart('7days')" id="chart-btn-7days" class="px-3 py-1.5 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300 transition-all text-xs chart-period-btn">
                             7 Days

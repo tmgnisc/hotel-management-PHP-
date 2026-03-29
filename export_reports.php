@@ -9,7 +9,7 @@ if (!isset($_SESSION['admin_logged_in'])) {
 
 $conn = getDBConnection();
 $type = $_GET['type'] ?? ''; // 'orders' or 'bookings'
-$period = $_GET['period'] ?? 'today'; // 'today', '7days', '30days', 'custom'
+$period = $_GET['period'] ?? 'today'; // 'today', 'yesterday', '7days', '30days', 'custom'
 $start_date = $_GET['start_date'] ?? '';
 $end_date = $_GET['end_date'] ?? '';
 
@@ -23,6 +23,12 @@ switch ($period) {
         $end_date = date('Y-m-d');
         $date_condition = "DATE(order_date) = CURDATE()";
         $date_range_text = date('Y-m-d');
+        break;
+    case 'yesterday':
+        $start_date = date('Y-m-d', strtotime('-1 day'));
+        $end_date = date('Y-m-d', strtotime('-1 day'));
+        $date_condition = "DATE(order_date) = DATE_SUB(CURDATE(), INTERVAL 1 DAY)";
+        $date_range_text = $start_date;
         break;
     case '7days':
         $start_date = date('Y-m-d', strtotime('-7 days'));
@@ -59,8 +65,8 @@ if ($type === 'orders') {
             o.order_date,
             o.items,
             o.subtotal,
-            o.tax,
-            o.discount,
+            o.discount_percentage,
+            o.discount_amount,
             o.total_amount,
             o.order_status,
             o.payment_status,
@@ -99,8 +105,8 @@ if ($type === 'orders') {
         'Order Date',
         'Items',
         'Subtotal',
-        'Tax',
-        'Discount',
+    'Discount %',
+    'Discount Amount',
         'Total Amount',
         'Order Status',
         'Payment Status',
@@ -117,7 +123,10 @@ if ($type === 'orders') {
         if (is_array($items)) {
             $item_parts = [];
             foreach ($items as $item) {
-                $item_parts[] = $item['name'] . ' (Qty: ' . $item['quantity'] . ', Price: Rs ' . number_format($item['price'], 2) . ')';
+                $itemName = $item['food_name'] ?? $item['name'] ?? 'Item';
+                $itemQty = $item['qty'] ?? $item['quantity'] ?? 0;
+                $itemPrice = (float)($item['price'] ?? 0);
+                $item_parts[] = $itemName . ' (Qty: ' . $itemQty . ', Price: Rs ' . number_format($itemPrice, 2) . ')';
             }
             $items_text = implode('; ', $item_parts);
         } else {
@@ -131,8 +140,8 @@ if ($type === 'orders') {
             $row['order_date'] ? date('Y-m-d H:i:s', strtotime($row['order_date'])) : 'N/A',
             $items_text,
             number_format($row['subtotal'], 2),
-            number_format($row['tax'], 2),
-            number_format($row['discount'], 2),
+            number_format($row['discount_percentage'], 2),
+            number_format($row['discount_amount'], 2),
             number_format($row['total_amount'], 2),
             $row['order_status'],
             $row['payment_status'],
@@ -150,6 +159,9 @@ if ($type === 'orders') {
     switch ($period) {
         case 'today':
             $booking_date_condition = "DATE(check_in_date) = CURDATE()";
+            break;
+        case 'yesterday':
+            $booking_date_condition = "DATE(check_in_date) = DATE_SUB(CURDATE(), INTERVAL 1 DAY)";
             break;
         case '7days':
             $booking_date_condition = "DATE(check_in_date) >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)";
