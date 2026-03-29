@@ -10,6 +10,22 @@ if (!isset($_SESSION['admin_logged_in'])) {
 $conn = getDBConnection();
 $orderId = isset($_GET['id']) ? intval($_GET['id']) : 0;
 
+function formatOrderSerial($orderNumber, $orderId = null) {
+    if (!empty($orderNumber) && preg_match('/^\d{8}$/', (string)$orderNumber)) {
+        return (string)$orderNumber;
+    }
+
+    if (!empty($orderNumber) && preg_match('/\d+/', (string)$orderNumber, $matches)) {
+        return str_pad(substr($matches[0], -8), 8, '0', STR_PAD_LEFT);
+    }
+
+    if (!empty($orderId)) {
+        return str_pad((string)intval($orderId), 8, '0', STR_PAD_LEFT);
+    }
+
+    return '00000000';
+}
+
 if ($orderId <= 0) {
     die('Invalid order ID');
 }
@@ -53,13 +69,14 @@ $discount_amount = isset($order['discount_amount']) ? (float)$order['discount_am
 $discountByPercentage = ($subtotal * $discount_percentage) / 100;
 $totalDiscount = $discountByPercentage + $discount_amount;
 $total = isset($order['total_amount']) ? (float)$order['total_amount'] : max(0, $subtotal - $totalDiscount);
+$displayBillNo = formatOrderSerial($order['order_number'] ?? '', $order['id'] ?? $orderId);
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Order Bill - <?php echo htmlspecialchars($order['order_number']); ?></title>
+    <title>Order Bill - <?php echo htmlspecialchars($displayBillNo); ?></title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @page {
@@ -124,7 +141,7 @@ $total = isset($order['total_amount']) ? (float)$order['total_amount'] : max(0, 
         </div>
 
         <div class="space-y-1 text-xs text-gray-800 mb-3">
-            <p><span class="font-semibold">Bill No:</span> <?php echo htmlspecialchars($order['order_number']); ?></p>
+            <p><span class="font-semibold">Bill No:</span> <?php echo htmlspecialchars($displayBillNo); ?></p>
             <p><span class="font-semibold">Date:</span> <?php echo $orderDate; ?></p>
             <p><span class="font-semibold">Table:</span> <?php echo htmlspecialchars($order['table_number'] ?? 'N/A'); ?></p>
             <p><span class="font-semibold">Payment:</span> <?php echo htmlspecialchars($order['payment_status'] ?? 'N/A'); ?> (<?php echo htmlspecialchars($order['payment_method'] ?? 'N/A'); ?>)</p>

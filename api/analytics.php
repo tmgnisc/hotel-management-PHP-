@@ -9,7 +9,7 @@ if (!isset($_SESSION['admin_logged_in'])) {
 }
 
 $conn = getDBConnection();
-$period = $_GET['period'] ?? '30days'; // 'today', '7days', '30days', 'custom'
+$period = $_GET['period'] ?? '30days'; // 'today', 'yesterday', '7days', '30days', 'custom'
 $start_date = $_GET['start_date'] ?? '';
 $end_date = $_GET['end_date'] ?? '';
 
@@ -22,6 +22,11 @@ switch ($period) {
         $start_date = date('Y-m-d');
         $end_date = date('Y-m-d');
         $date_condition = "DATE(order_date) = CURDATE()";
+        break;
+    case 'yesterday':
+        $start_date = date('Y-m-d', strtotime('-1 day'));
+        $end_date = date('Y-m-d', strtotime('-1 day'));
+        $date_condition = "DATE(order_date) = DATE_SUB(CURDATE(), INTERVAL 1 DAY)";
         break;
     case '7days':
         $start_date = date('Y-m-d', strtotime('-7 days'));
