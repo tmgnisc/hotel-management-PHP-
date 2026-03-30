@@ -4,7 +4,7 @@ error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
 session_start();
-require_once 'config/database.php';
+require_once '../config/database.php';
 
 if (!isset($_SESSION['admin_logged_in'])) {
     header('Location: login.php');

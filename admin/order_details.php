@@ -4,7 +4,7 @@ error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
 session_start();
-require_once 'config/database.php';
+require_once '../config/database.php';
 
 if (!isset($_SESSION['admin_logged_in'])) {
     header('Location: login.php');
@@ -198,6 +198,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $order_status = trim($_POST['order_status'] ?? 'pending');
             $payment_status = trim($_POST['payment_status'] ?? 'pending');
             $payment_method = trim($_POST['payment_method'] ?? 'cash');
+            $customer_given_amount = floatval($_POST['paid_amount'] ?? ($_POST['customer_given_amount'] ?? 0));
             $discount_percentage = floatval($_POST['discount_percentage'] ?? 0);
             $discount_amount = floatval($_POST['discount_amount'] ?? 0);
             $notes = trim($_POST['notes'] ?? '');
@@ -242,10 +243,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $discountByPercentage = ($subtotal * $discount_percentage) / 100;
                 $totalDiscount = $discountByPercentage + $discount_amount;
                 $total_amount = max(0, $subtotal - $totalDiscount); // Ensure total doesn't go negative
+                if (strtolower($payment_status) === 'paid' && $customer_given_amount <= 0) {
+                    $customer_given_amount = $total_amount;
+                }
+                $return_amount = max(0, $customer_given_amount - $total_amount);
                 
-                $stmt = $conn->prepare("INSERT INTO order_details (order_number, table_id, regular_customer_id, order_date, items, subtotal, discount_percentage, discount_amount, total_amount, order_status, payment_status, payment_method, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                $stmt = $conn->prepare("INSERT INTO order_details (order_number, table_id, regular_customer_id, order_date, items, subtotal, discount_percentage, discount_amount, total_amount, customer_given_amount, return_amount, order_status, payment_status, payment_method, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
                 if ($stmt) {
-                    $stmt->bind_param("siissddddssss", $order_number, $table_id, $regular_customer_id, $order_date, $itemsJson, $subtotal, $discount_percentage, $discount_amount, $total_amount, $order_status, $payment_status, $payment_method, $notes);
+                    $stmt->bind_param("siissddddddssss", $order_number, $table_id, $regular_customer_id, $order_date, $itemsJson, $subtotal, $discount_percentage, $discount_amount, $total_amount, $customer_given_amount, $return_amount, $order_status, $payment_status, $payment_method, $notes);
                     if ($stmt->execute()) {
                         $newOrderId = $conn->insert_id;
                         if ($newOrderId > 0) {
@@ -290,12 +295,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $order_status = trim($_POST['order_status'] ?? 'pending');
             $payment_status = trim($_POST['payment_status'] ?? 'pending');
             $payment_method = trim($_POST['payment_method'] ?? 'cash');
+            $customer_given_amount = floatval($_POST['paid_amount'] ?? ($_POST['customer_given_amount'] ?? 0));
             $discount_percentage = floatval($_POST['discount_percentage'] ?? 0);
             $discount_amount = floatval($_POST['discount_amount'] ?? 0);
             $notes = trim($_POST['notes'] ?? '');
 
             $isOrderStatusOnlyUpdate = false;
             $isLinkedStatusOnlyUpdate = false;
+            $canProceedFullUpdate = false;
 
             if ($id <= 0) {
                 $message = "Invalid order ID!";
@@ -319,74 +326,43 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         $existingTotalAmount = (float)($existingOrder['total_amount'] ?? 0);
                         $existingOrderNumber = $existingOrder['order_number'] ?? '';
 
-                        if ($existingRegularCustomerId > 0) {
-                            $isLinkedEditLocked = ($existingOrderStatus === 'completed' || $existingPaymentStatus === 'paid');
-                            if ($isLinkedEditLocked) {
-                                $message = "Linked regular customer order is completed/paid, so editing is disabled!";
-                                $messageType = 'error';
-                            } else {
-                            $isLinkedStatusOnlyUpdate = true;
-                            $allowedOrderStatuses = ['pending', 'completed'];
+                        if ($existingPaymentStatus === 'paid') {
+                            $message = "This paid order cannot be edited!";
+                            $messageType = 'error';
+                        } elseif ($existingOrderStatus === 'completed') {
                             $allowedPaymentStatuses = ['pending', 'paid', 'cancelled'];
+                            $allowedPaymentMethods = ['cash', 'card', 'online'];
 
-                            if (!in_array($order_status, $allowedOrderStatuses, true)) {
-                                $order_status = 'pending';
-                            }
                             if (!in_array($payment_status, $allowedPaymentStatuses, true)) {
                                 $payment_status = 'pending';
                             }
+                            if (!in_array($payment_method, $allowedPaymentMethods, true)) {
+                                $payment_method = 'cash';
+                            }
 
-                            $linkedStatusStmt = $conn->prepare("UPDATE order_details SET order_status = ?, payment_status = ? WHERE id = ?");
-                            if ($linkedStatusStmt) {
-                                $linkedStatusStmt->bind_param("ssi", $order_status, $payment_status, $id);
-                                if ($linkedStatusStmt->execute()) {
+                            $completedPaymentStmt = $conn->prepare("UPDATE order_details SET payment_status = ?, payment_method = ? WHERE id = ?");
+                            if ($completedPaymentStmt) {
+                                $completedPaymentStmt->bind_param("ssi", $payment_status, $payment_method, $id);
+                                if ($completedPaymentStmt->execute()) {
                                     syncOrderTransactionForRegularCustomer($conn, $id, $existingRegularCustomerId, $existingTotalAmount, $existingOrderNumber, $payment_status);
 
-                                    $message = "Order and payment status updated successfully!";
+                                    $message = "Completed order payment details updated successfully!";
                                     $messageType = 'success';
-                                    $linkedStatusStmt->close();
+                                    $completedPaymentStmt->close();
                                     $conn->close();
                                     header('Location: order_details.php?msg=' . urlencode($message) . '&type=' . $messageType);
                                     exit;
                                 } else {
-                                    $message = "Error updating statuses: " . $linkedStatusStmt->error;
+                                    $message = "Error updating completed order payment details: " . $completedPaymentStmt->error;
                                     $messageType = 'error';
                                 }
-                                $linkedStatusStmt->close();
+                                $completedPaymentStmt->close();
                             } else {
-                                $message = "Error preparing linked status update: " . $conn->error;
+                                $message = "Error preparing completed order payment update: " . $conn->error;
                                 $messageType = 'error';
                             }
-                            }
-                        }
-
-                        $isOrderStatusOnlyUpdate = ($existingOrderStatus === 'pending');
-
-                        if (!$isLinkedStatusOnlyUpdate && $isOrderStatusOnlyUpdate) {
-                            $allowedOrderStatuses = ['pending', 'completed'];
-                            if (!in_array($order_status, $allowedOrderStatuses, true)) {
-                                $order_status = 'pending';
-                            }
-
-                            $orderStatusOnlyStmt = $conn->prepare("UPDATE order_details SET order_status = ? WHERE id = ?");
-                            if ($orderStatusOnlyStmt) {
-                                $orderStatusOnlyStmt->bind_param("si", $order_status, $id);
-                                if ($orderStatusOnlyStmt->execute()) {
-                                    $message = "Order status updated successfully!";
-                                    $messageType = 'success';
-                                    $orderStatusOnlyStmt->close();
-                                    $conn->close();
-                                    header('Location: order_details.php?msg=' . urlencode($message) . '&type=' . $messageType);
-                                    exit;
-                                } else {
-                                    $message = "Error updating order status: " . $orderStatusOnlyStmt->error;
-                                    $messageType = 'error';
-                                }
-                                $orderStatusOnlyStmt->close();
-                            } else {
-                                $message = "Error preparing order status update: " . $conn->error;
-                                $messageType = 'error';
-                            }
+                        } else {
+                            $canProceedFullUpdate = true;
                         }
                     }
                 } else {
@@ -397,7 +373,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
             if ($messageType === 'error' && !empty($message)) {
                 // Stop further full update processing when validation or order-status-only update prep failed
-            } elseif (!$isOrderStatusOnlyUpdate && !$isLinkedStatusOnlyUpdate) {
+            } elseif ($canProceedFullUpdate) {
             
             // Process food items
             $items = [];
@@ -439,10 +415,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $discountByPercentage = ($subtotal * $discount_percentage) / 100;
                 $totalDiscount = $discountByPercentage + $discount_amount;
                 $total_amount = max(0, $subtotal - $totalDiscount); // Ensure total doesn't go negative
+                if (strtolower($payment_status) === 'paid' && $customer_given_amount <= 0) {
+                    $customer_given_amount = $total_amount;
+                }
+                $return_amount = max(0, $customer_given_amount - $total_amount);
                 
-                $stmt = $conn->prepare("UPDATE order_details SET table_id=?, regular_customer_id=?, order_date=?, items=?, subtotal=?, discount_percentage=?, discount_amount=?, total_amount=?, order_status=?, payment_status=?, payment_method=?, notes=? WHERE id=?");
+                $stmt = $conn->prepare("UPDATE order_details SET table_id=?, regular_customer_id=?, order_date=?, items=?, subtotal=?, discount_percentage=?, discount_amount=?, total_amount=?, customer_given_amount=?, return_amount=?, order_status=?, payment_status=?, payment_method=?, notes=? WHERE id=?");
                 if ($stmt) {
-                    $stmt->bind_param("iissddddssssi", $table_id, $regular_customer_id, $order_date, $itemsJson, $subtotal, $discount_percentage, $discount_amount, $total_amount, $order_status, $payment_status, $payment_method, $notes, $id);
+                    $stmt->bind_param("iissddddddssssi", $table_id, $regular_customer_id, $order_date, $itemsJson, $subtotal, $discount_percentage, $discount_amount, $total_amount, $customer_given_amount, $return_amount, $order_status, $payment_status, $payment_method, $notes, $id);
                     if ($stmt->execute()) {
                         $orderNoStmt = $conn->prepare("SELECT order_number FROM order_details WHERE id = ?");
                         $currentOrderNumber = '';
@@ -669,6 +649,8 @@ $conn->close();
                     'foodSearch',
                     'discount_percentage',
                     'discount_amount',
+                    'paid_amount',
+                    'return_amount',
                     'payment_status',
                     'payment_method',
                     'notes'
@@ -700,6 +682,59 @@ $conn->close();
                     foodItemsContainer.classList.toggle('opacity-60', isOrderStatusOnly);
                 }
             }
+
+            function setCompletedPaymentEditMode(isCompletedPaymentOnly, noticeText) {
+                var orderStatusOnlyNotice = document.getElementById('orderStatusOnlyNotice');
+                noticeText = noticeText || 'This order is completed. Only <strong>Payment Status</strong> and <strong>Payment Method</strong> can be edited.';
+
+                if (orderStatusOnlyNotice) {
+                    if (isCompletedPaymentOnly) {
+                        orderStatusOnlyNotice.innerHTML = noticeText;
+                        orderStatusOnlyNotice.classList.remove('hidden');
+                    } else {
+                        orderStatusOnlyNotice.classList.add('hidden');
+                    }
+                }
+
+                var fieldIds = [
+                    'table_id',
+                    'regular_customer_search',
+                    'order_date',
+                    'foodSearch',
+                    'discount_percentage',
+                    'discount_amount',
+                    'paid_amount',
+                    'return_amount',
+                    'order_status',
+                    'notes'
+                ];
+
+                fieldIds.forEach(function(id) {
+                    var field = document.getElementById(id);
+                    if (field) {
+                        field.disabled = isCompletedPaymentOnly;
+                    }
+                });
+
+                var paymentStatusField = document.getElementById('payment_status');
+                if (paymentStatusField) {
+                    paymentStatusField.disabled = false;
+                }
+
+                var paymentMethodField = document.getElementById('payment_method');
+                if (paymentMethodField) {
+                    paymentMethodField.disabled = false;
+                }
+
+                var foodItemsContainer = document.getElementById('foodItemsContainer');
+                if (foodItemsContainer) {
+                    var itemControls = foodItemsContainer.querySelectorAll('input, button, select, textarea');
+                    itemControls.forEach(function(ctrl) {
+                        ctrl.disabled = isCompletedPaymentOnly;
+                    });
+                    foodItemsContainer.classList.toggle('opacity-60', isCompletedPaymentOnly);
+                }
+            }
             
             openModal = function(action, data) {
                 var modal = document.getElementById('modal');
@@ -712,9 +747,7 @@ $conn->close();
 
                 var isPaidStatus = String((data && data.payment_status) || '').toLowerCase() === 'paid';
                 var isCompletedStatus = String((data && data.order_status) || '').toLowerCase() === 'completed';
-                var isLinkedRegularCustomer = !!(data && data.regular_customer_id);
-
-                if (action === 'edit' && data && ((isLinkedRegularCustomer && (isPaidStatus || isCompletedStatus)) || (!isLinkedRegularCustomer && isPaidStatus))) {
+                if (action === 'edit' && data && isPaidStatus) {
                     alert('This order is already paid, so editing is disabled. You can print the bill.');
                     return;
                 }
@@ -724,6 +757,7 @@ $conn->close();
                 document.getElementById('formAction').value = formAction;
                 document.getElementById('modalTitle').textContent = action === 'create' ? 'Add New Order' : 'Edit Order';
                 setOrderStatusOnlyEditMode(false, false, '');
+                setCompletedPaymentEditMode(false, '');
                 
                 // Clear food items container
                 var foodItemsContainer = document.getElementById('foodItemsContainer');
@@ -750,23 +784,19 @@ $conn->close();
                     document.getElementById('order_status').value = data.order_status || 'pending';
                     document.getElementById('payment_status').value = data.payment_status || 'pending';
                     document.getElementById('payment_method').value = data.payment_method || 'cash';
+                    document.getElementById('paid_amount').value = data.paid_amount || data.customer_given_amount || '0';
+                    document.getElementById('return_amount').value = data.return_amount || '0';
                     document.getElementById('discount_percentage').value = data.discount_percentage || '0';
                     document.getElementById('discount_amount').value = data.discount_amount || '0';
                     document.getElementById('notes').value = data.notes || '';
 
                     var currentOrderStatus = String(data.order_status || '').toLowerCase();
-                    var isLinkedRegularCustomer = !!data.regular_customer_id;
-                    var orderStatusOnlyMode = (currentOrderStatus === 'pending');
-
-                    if (isLinkedRegularCustomer) {
-                        setOrderStatusOnlyEditMode(true, true, 'This order is linked to a regular customer. Only <strong>Order Status</strong> and <strong>Payment Status</strong> can be edited.');
-                        document.getElementById('modalTitle').textContent = 'Edit Order & Payment Status';
+                    if (currentOrderStatus === 'completed') {
+                        setCompletedPaymentEditMode(true, 'This order is completed. Only <strong>Payment Status</strong> and <strong>Payment Method</strong> can be edited.');
+                        document.getElementById('modalTitle').textContent = 'Edit Payment Details';
                     } else {
-                        setOrderStatusOnlyEditMode(orderStatusOnlyMode, false, 'This order is pending. Only <strong>Order Status</strong> can be edited.');
-                    }
-
-                    if (!isLinkedRegularCustomer && orderStatusOnlyMode) {
-                        document.getElementById('modalTitle').textContent = 'Edit Order Status';
+                        setOrderStatusOnlyEditMode(false, false, '');
+                        setCompletedPaymentEditMode(false, '');
                     }
                     
                     // Load existing items
@@ -791,6 +821,8 @@ $conn->close();
                     document.getElementById('regular_customer_search').value = '';
                     document.getElementById('discount_percentage').value = '0';
                     document.getElementById('discount_amount').value = '0';
+                    document.getElementById('paid_amount').value = '0';
+                    document.getElementById('return_amount').value = '0';
                     // Always set current date/time for new orders
                     var now = new Date();
                     var year = now.getFullYear();
@@ -886,7 +918,7 @@ $conn->close();
                         </div>
                         <div id="item_total_${foodIdToUse}" class="text-sm font-bold text-green-700 min-w-[70px] text-right">Rs ${(food.price * initQty).toFixed(2)}</div>
                     </div>
-                    <button type="button" onclick="removeFoodItem(${foodIdToUse})" class="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition-colors text-sm">
+                    <button type="button" onclick="removeFoodItem('${foodIdToUse}')" class="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition-colors text-sm">
                         ✕
                     </button>
                 `;
@@ -961,6 +993,15 @@ $conn->close();
                 // Update numeric fields
                 document.getElementById('subtotal').value = subtotal.toFixed(2);
                 document.getElementById('total_amount').value = total.toFixed(2);
+
+                // Calculate return amount from paid amount
+                var paidAmountInput = document.getElementById('paid_amount');
+                var returnAmountInput = document.getElementById('return_amount');
+                if (paidAmountInput && returnAmountInput) {
+                    var paidAmount = parseFloat(paidAmountInput.value) || 0;
+                    var returnAmount = Math.max(0, paidAmount - total);
+                    returnAmountInput.value = returnAmount.toFixed(2);
+                }
                 
                 // Update visual bill summary
                 var billSummaryItemsEl = document.getElementById('billSummaryItems');
@@ -1312,33 +1353,32 @@ $conn->close();
                     </p>
                 </div>
                 <div class="flex flex-wrap gap-3">
-                    <?php if ($viewMode !== 'today'): ?>
-                        <a href="?view=today" class="px-5 py-2.5 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-all shadow-md text-sm flex items-center gap-2">
-                            📅 Today Orders
-                        </a>
-                    <?php else: ?>
-                        <span class="px-5 py-2.5 bg-blue-100 text-blue-700 rounded-lg font-semibold shadow-sm text-sm flex items-center gap-2 cursor-default">
-                            📅 Today Orders
-                        </span>
-                    <?php endif; ?>
-
                     <?php if ($viewMode !== 'yesterday'): ?>
                         <a href="?view=yesterday" class="px-5 py-2.5 bg-amber-600 text-white rounded-lg font-semibold hover:bg-amber-700 transition-all shadow-md text-sm flex items-center gap-2">
-                            🕘 Yesterday Orders
+                             Yesterday Orders
                         </a>
                     <?php else: ?>
                         <span class="px-5 py-2.5 bg-amber-100 text-amber-700 rounded-lg font-semibold shadow-sm text-sm flex items-center gap-2 cursor-default">
-                            🕘 Yesterday Orders
+                             Yesterday Orders
+                        </span>
+                    <?php endif; ?>
+                    <?php if ($viewMode !== 'today'): ?>
+                        <a href="?view=today" class="px-5 py-2.5 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-all shadow-md text-sm flex items-center gap-2">
+                             Today Orders
+                        </a>
+                    <?php else: ?>
+                        <span class="px-5 py-2.5 bg-blue-100 text-blue-700 rounded-lg font-semibold shadow-sm text-sm flex items-center gap-2 cursor-default">
+                             Today Orders
                         </span>
                     <?php endif; ?>
 
                     <?php if ($viewMode !== 'all'): ?>
                         <a href="?view=all" class="px-5 py-2.5 bg-gray-700 text-white rounded-lg font-semibold hover:bg-gray-800 transition-all shadow-md text-sm flex items-center gap-2">
-                            📋 View All Orders
+                             View All Orders
                         </a>
                     <?php else: ?>
                         <span class="px-5 py-2.5 bg-gray-200 text-gray-700 rounded-lg font-semibold shadow-sm text-sm flex items-center gap-2 cursor-default">
-                            📋 View All Orders
+                             View All Orders
                         </span>
                     <?php endif; ?>
                     <button onclick="openModal('create')" class="px-6 py-2.5 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-all shadow-md hover:shadow-lg">
@@ -1425,9 +1465,9 @@ $conn->close();
                                         <?php $isPaid = (($row['payment_status'] ?? '') === 'paid'); ?>
                                         <?php $isRegularCustomerLinked = !empty($row['regular_customer_id']); ?>
                                         <?php $isCompleted = (($row['order_status'] ?? '') === 'completed'); ?>
-                                        <?php $isLinkedEditLocked = ($isRegularCustomerLinked && ($isPaid || $isCompleted)); ?>
+                                        <?php $isLinkedEditLocked = false; ?>
                                         <?php $isDeleteLocked = ($isPaid && $isCompleted); ?>
-                                        <?php if (($isPaid && !$isRegularCustomerLinked) || $isLinkedEditLocked): ?>
+                                        <?php if ($isPaid || $isLinkedEditLocked): ?>
                                             <button type="button" disabled class="px-3 py-1 bg-gray-300 text-gray-600 rounded-md cursor-not-allowed opacity-70 text-xs" title="Paid orders cannot be edited">
                                                 Edit
                                             </button>
@@ -1543,9 +1583,9 @@ $conn->close();
                                     <?php $isPaid = (($row['payment_status'] ?? '') === 'paid'); ?>
                                     <?php $isRegularCustomerLinked = !empty($row['regular_customer_id']); ?>
                                     <?php $isCompleted = (($row['order_status'] ?? '') === 'completed'); ?>
-                                    <?php $isLinkedEditLocked = ($isRegularCustomerLinked && ($isPaid || $isCompleted)); ?>
+                                    <?php $isLinkedEditLocked = false; ?>
                                     <?php $isDeleteLocked = ($isPaid && $isCompleted); ?>
-                                    <?php if (($isPaid && !$isRegularCustomerLinked) || $isLinkedEditLocked): ?>
+                                    <?php if ($isPaid || $isLinkedEditLocked): ?>
                                         <button type="button" disabled class="px-3 py-1 bg-gray-300 text-gray-600 rounded-md cursor-not-allowed opacity-70 text-xs" title="Paid orders cannot be edited">
                                             Edit
                                         </button>
@@ -1760,6 +1800,17 @@ $conn->close();
                             <option value="card">Card</option>
                             <option value="online">Online</option>
                         </select>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="paid_amount" class="block text-sm font-semibold text-gray-700 mb-2">Paid Amount</label>
+                        <input type="number" id="paid_amount" name="paid_amount" min="0" step="0.01" value="0" oninput="calculateTotal()" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none" placeholder="Enter paid amount">
+                    </div>
+                    <div>
+                        <label for="return_amount" class="block text-sm font-semibold text-gray-700 mb-2">Return Amount</label>
+                        <input type="number" id="return_amount" name="return_amount" step="0.01" readonly value="0" class="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-100 outline-none text-green-700 font-semibold">
                     </div>
                 </div>
                 

@@ -12,6 +12,20 @@
     # Remove trailing slashes
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteRule ^(.*)/$ /$1 [L,R=301]
+
+    # Admin entry shortcuts
+    RewriteRule ^admin$ admin/index.php [L,QSA]
+    RewriteRule ^login$ admin/login.php [L,QSA]
+    RewriteRule ^logout$ admin/logout.php [L,QSA]
+
+    # Backward compatibility for old root admin page URLs
+    RewriteRule ^(bookings|categories|export_reports|fix_capacity_column|menu|normal_rooms|order_bill|order_details|profile|regular_customers|subcategories|tables|users)\.php$ admin/$1.php [L,QSA]
+
+    # Extensionless PHP routes (e.g., /admin/bookings -> /admin/bookings.php)
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_FILENAME}.php -f
+    RewriteRule ^(.+)$ $1.php [L,QSA]
 </IfModule>
 
 # Prevent directory browsing

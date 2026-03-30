@@ -1,0 +1,11 @@
+/* Purchase details page-specific styles */
+.purchase-records-table td,
+.purchase-records-table th {
+    white-space: nowrap;
+}
+
+.purchase-records-table td:last-child,
+.purchase-records-table th:last-child {
+    min-width: 180px;
+    white-space: normal;
+}

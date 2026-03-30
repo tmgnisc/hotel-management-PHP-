@@ -1,6 +1,6 @@
 <?php
 // Script to fix the capacity column issue in normal_rooms table
-require_once 'config/database.php';
+require_once '../config/database.php';
 
 $conn = getDBConnection();
 

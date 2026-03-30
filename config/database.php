@@ -119,6 +119,26 @@ function initializeDatabase() {
             FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL,
             FOREIGN KEY (subcategory_id) REFERENCES subcategories(id) ON DELETE SET NULL
         )",
+
+        "CREATE TABLE IF NOT EXISTS gallery_images (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            title VARCHAR(255) NOT NULL,
+            subtitle VARCHAR(255),
+            category ENUM('food', 'interior', 'team', 'events', 'other') DEFAULT 'food',
+            image_url TEXT NOT NULL,
+            public_id VARCHAR(255) NOT NULL,
+            sort_order INT DEFAULT 0,
+            is_active TINYINT(1) DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        )",
+
+        "CREATE TABLE IF NOT EXISTS contact_messages (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            customer_name VARCHAR(255) NOT NULL,
+            message TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )",
         
         "CREATE TABLE IF NOT EXISTS regular_customers (
             id INT AUTO_INCREMENT PRIMARY KEY,
@@ -150,6 +170,8 @@ function initializeDatabase() {
             discount_percentage DECIMAL(5, 2) DEFAULT 0.00,
             discount_amount DECIMAL(10, 2) DEFAULT 0.00,
             total_amount DECIMAL(10, 2) NOT NULL,
+            customer_given_amount DECIMAL(10, 2) DEFAULT 0.00,
+            return_amount DECIMAL(10, 2) DEFAULT 0.00,
             order_status ENUM('pending', 'completed') DEFAULT 'pending',
             payment_status ENUM('pending', 'paid', 'cancelled') DEFAULT 'pending',
             payment_method ENUM('cash', 'card', 'online') DEFAULT 'cash',
@@ -159,6 +181,19 @@ function initializeDatabase() {
             FOREIGN KEY (table_id) REFERENCES tables(id) ON DELETE SET NULL,
             FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE SET NULL,
             FOREIGN KEY (regular_customer_id) REFERENCES regular_customers(id) ON DELETE SET NULL
+        )",
+
+        "CREATE TABLE IF NOT EXISTS purchase_details (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            item_name VARCHAR(255) NOT NULL,
+            quantity DECIMAL(10, 2) NOT NULL,
+            rate DECIMAL(10, 2) NOT NULL,
+            amount DECIMAL(12, 2) NOT NULL,
+            purchase_date DATE NOT NULL,
+            supplier_name VARCHAR(255),
+            remarks TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         )",
         
         "CREATE TABLE IF NOT EXISTS users (
@@ -362,6 +397,18 @@ function initializeDatabase() {
                     $conn->query($alterSql); // Ignore errors if constraint already exists
                 }
             }
+        }
+
+        // Add customer_given_amount if it doesn't exist
+        if (!in_array('customer_given_amount', $existingOrderDetailsColumns)) {
+            $alterSql = "ALTER TABLE order_details ADD COLUMN customer_given_amount DECIMAL(10, 2) DEFAULT 0.00 AFTER total_amount";
+            $conn->query($alterSql);
+        }
+
+        // Add return_amount if it doesn't exist
+        if (!in_array('return_amount', $existingOrderDetailsColumns)) {
+            $alterSql = "ALTER TABLE order_details ADD COLUMN return_amount DECIMAL(10, 2) DEFAULT 0.00 AFTER customer_given_amount";
+            $conn->query($alterSql);
         }
         
         // Ensure payment_status has 'pending' as default

@@ -4,7 +4,7 @@ error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
 session_start();
-require_once 'config/database.php';
+require_once '../config/database.php';
 
 if (!isset($_SESSION['admin_logged_in'])) {
     header('Location: login.php');
@@ -19,25 +19,24 @@ $messageType = 'success';
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     if (isset($_POST['action'])) {
         if ($_POST['action'] == 'create') {
-            $room_number = trim($_POST['room_number'] ?? '');
-            $room_type = trim($_POST['room_type'] ?? '');
-            $capacity_type = trim($_POST['capacity_type'] ?? '');
-            $status = trim($_POST['status'] ?? '');
-            $amenities = trim($_POST['amenities'] ?? '');
+            $food_name = trim($_POST['food_name'] ?? '');
+            $price = floatval($_POST['price'] ?? 0);
+            $category_id = intval($_POST['category_id'] ?? 0);
+            $subcategory_id = intval($_POST['subcategory_id'] ?? 0);
             
-            if (empty($room_number) || empty($room_type) || empty($capacity_type) || empty($status)) {
+            if (empty($food_name) || $price <= 0 || $category_id <= 0 || $subcategory_id <= 0) {
                 $message = "Please fill all required fields correctly!";
                 $messageType = 'error';
             } else {
-                $stmt = $conn->prepare("INSERT INTO normal_rooms (room_number, room_type, capacity_type, status, amenities) VALUES (?, ?, ?, ?, ?)");
+                $stmt = $conn->prepare("INSERT INTO menu (food_name, price, category_id, subcategory_id) VALUES (?, ?, ?, ?)");
                 if ($stmt) {
-                    $stmt->bind_param("sssss", $room_number, $room_type, $capacity_type, $status, $amenities);
+                    $stmt->bind_param("sdii", $food_name, $price, $category_id, $subcategory_id);
                     if ($stmt->execute()) {
-                        $message = "Normal room created successfully!";
+                        $message = "Menu item created successfully!";
                         $messageType = 'success';
                         $stmt->close();
                         $conn->close();
-                        header('Location: normal_rooms.php?msg=' . urlencode($message) . '&type=' . $messageType);
+                        header('Location: menu.php?msg=' . urlencode($message) . '&type=' . $messageType);
                         exit;
                     } else {
                         $message = "Error executing query: " . $stmt->error;
@@ -51,25 +50,24 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             }
         } elseif ($_POST['action'] == 'update') {
             $id = intval($_POST['id'] ?? 0);
-            $room_number = trim($_POST['room_number'] ?? '');
-            $room_type = trim($_POST['room_type'] ?? '');
-            $capacity_type = trim($_POST['capacity_type'] ?? '');
-            $status = trim($_POST['status'] ?? '');
-            $amenities = trim($_POST['amenities'] ?? '');
+            $food_name = trim($_POST['food_name'] ?? '');
+            $price = floatval($_POST['price'] ?? 0);
+            $category_id = intval($_POST['category_id'] ?? 0);
+            $subcategory_id = intval($_POST['subcategory_id'] ?? 0);
             
-            if (empty($room_number) || empty($room_type) || empty($capacity_type) || empty($status) || $id <= 0) {
+            if (empty($food_name) || $price <= 0 || $id <= 0 || $category_id <= 0 || $subcategory_id <= 0) {
                 $message = "Please fill all required fields correctly!";
                 $messageType = 'error';
             } else {
-                $stmt = $conn->prepare("UPDATE normal_rooms SET room_number=?, room_type=?, capacity_type=?, status=?, amenities=? WHERE id=?");
+                $stmt = $conn->prepare("UPDATE menu SET food_name=?, price=?, category_id=?, subcategory_id=? WHERE id=?");
                 if ($stmt) {
-                    $stmt->bind_param("sssssi", $room_number, $room_type, $capacity_type, $status, $amenities, $id);
+                    $stmt->bind_param("sdiii", $food_name, $price, $category_id, $subcategory_id, $id);
                     if ($stmt->execute()) {
-                        $message = "Normal room updated successfully!";
+                        $message = "Menu item updated successfully!";
                         $messageType = 'success';
                         $stmt->close();
                         $conn->close();
-                        header('Location: normal_rooms.php?msg=' . urlencode($message) . '&type=' . $messageType);
+                        header('Location: menu.php?msg=' . urlencode($message) . '&type=' . $messageType);
                         exit;
                     } else {
                         $message = "Error executing update: " . $stmt->error;
@@ -84,15 +82,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         } elseif ($_POST['action'] == 'delete') {
             $id = intval($_POST['id'] ?? 0);
             if ($id > 0) {
-                $stmt = $conn->prepare("DELETE FROM normal_rooms WHERE id=?");
+                $stmt = $conn->prepare("DELETE FROM menu WHERE id=?");
                 if ($stmt) {
                     $stmt->bind_param("i", $id);
                     if ($stmt->execute()) {
-                        $message = "Normal room deleted successfully!";
+                        $message = "Menu item deleted successfully!";
                         $messageType = 'success';
                         $stmt->close();
                         $conn->close();
-                        header('Location: normal_rooms.php?msg=' . urlencode($message) . '&type=' . $messageType);
+                        header('Location: menu.php?msg=' . urlencode($message) . '&type=' . $messageType);
                         exit;
                     } else {
                         $message = "Error deleting: " . $stmt->error;
@@ -114,10 +112,22 @@ if (isset($_GET['msg'])) {
     $messageType = $_GET['type'] ?? 'success';
 }
 
-// Fetch all normal rooms
-$rooms = $conn->query("SELECT * FROM normal_rooms ORDER BY room_number");
-if (!$rooms) {
-    die("Error fetching rooms: " . $conn->error);
+// Fetch all categories for dropdown
+$categories = $conn->query("SELECT * FROM categories ORDER BY category_name");
+if (!$categories) {
+    die("Error fetching categories: " . $conn->error);
+}
+
+// Fetch all subcategories for dropdown
+$allSubcategories = $conn->query("SELECT * FROM subcategories ORDER BY category_id, subcategory_name");
+if (!$allSubcategories) {
+    die("Error fetching subcategories: " . $conn->error);
+}
+
+// Fetch all menu items with category and subcategory names
+$menuItems = $conn->query("SELECT m.*, c.category_name, s.subcategory_name FROM menu m LEFT JOIN categories c ON m.category_id = c.id LEFT JOIN subcategories s ON m.subcategory_id = s.id ORDER BY c.category_name, s.subcategory_name, m.food_name");
+if (!$menuItems) {
+    die("Error fetching menu items: " . $conn->error);
 }
 $conn->close();
 ?>
@@ -126,17 +136,46 @@ $conn->close();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Normal Rooms - Admin Dashboard</title>
+    <title>Menu Management - Admin Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="assets/css/style.css">
-    <!-- Define modal functions in HEAD -->
     <script>
-        var openModal, closeModal, deleteRecord;
+        var openModal, closeModal, deleteRecord, updateSubcategories;
+        
+        // Subcategories data
+        var subcategoriesData = <?php 
+            $subcategoriesArray = [];
+            $allSubcategories->data_seek(0);
+            while ($sub = $allSubcategories->fetch_assoc()) {
+                if (!isset($subcategoriesArray[$sub['category_id']])) {
+                    $subcategoriesArray[$sub['category_id']] = [];
+                }
+                $subcategoriesArray[$sub['category_id']][] = $sub;
+            }
+            echo json_encode($subcategoriesArray);
+        ?>;
+        
+        // Function to update subcategories dropdown based on selected category
+        updateSubcategories = function(categoryId) {
+            var subcategorySelect = document.getElementById('subcategory_id');
+            if (!subcategorySelect) return;
+            
+            subcategorySelect.innerHTML = '<option value="">Select Subcategory</option>';
+            
+            if (categoryId && subcategoriesData[categoryId]) {
+                subcategoriesData[categoryId].forEach(function(sub) {
+                    var option = document.createElement('option');
+                    option.value = sub.id;
+                    option.textContent = sub.subcategory_name;
+                    subcategorySelect.appendChild(option);
+                });
+            }
+        };
         
         (function() {
             openModal = function(action, data) {
                 var modal = document.getElementById('modal');
-                var form = document.getElementById('roomForm');
+                var form = document.getElementById('menuForm');
                 
                 if (!modal || !form) {
                     console.error('Modal or form not found');
@@ -146,18 +185,22 @@ $conn->close();
                 // Set form action: 'create' for new, 'update' for edit
                 var formAction = action === 'edit' ? 'update' : 'create';
                 document.getElementById('formAction').value = formAction;
-                document.getElementById('modalTitle').textContent = action === 'create' ? 'Add New Room' : 'Edit Room';
+                document.getElementById('modalTitle').textContent = action === 'create' ? 'Add New Menu Item' : 'Edit Menu Item';
                 
                 if (action === 'edit' && data) {
                     document.getElementById('formId').value = data.id || '';
-                    document.getElementById('room_number').value = data.room_number || '';
-                    document.getElementById('room_type').value = data.room_type || '';
-                    document.getElementById('capacity_type').value = data.capacity_type || '';
-                    document.getElementById('status').value = data.status || '';
-                    document.getElementById('amenities').value = data.amenities || '';
+                    document.getElementById('food_name').value = data.food_name || '';
+                    document.getElementById('price').value = data.price || '';
+                    document.getElementById('category_id').value = data.category_id || '';
+                    // Trigger subcategory update
+                    updateSubcategories(data.category_id);
+                    setTimeout(function() {
+                        document.getElementById('subcategory_id').value = data.subcategory_id || '';
+                    }, 100);
                 } else {
                     form.reset();
                     document.getElementById('formId').value = '';
+                    document.getElementById('subcategory_id').innerHTML = '<option value="">Select Category First</option>';
                 }
                 
                 modal.classList.remove('hidden');
@@ -171,7 +214,7 @@ $conn->close();
             };
             
             deleteRecord = function(id) {
-                if (confirm('Are you sure you want to delete this room?')) {
+                if (confirm('Are you sure you want to delete this menu item?')) {
                     document.getElementById('deleteId').value = id;
                     document.getElementById('deleteForm').submit();
                 }
@@ -185,9 +228,9 @@ $conn->close();
 
         <main class="md:ml-64 p-4 md:p-6 lg:p-8">
             <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-                <h2 class="text-2xl md:text-3xl font-bold text-gray-900">Normal Rooms Management</h2>
+                <h2 class="text-2xl md:text-3xl font-bold text-gray-900">Menu Management</h2>
                 <button onclick="openModal('create')" class="px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-all shadow-md hover:shadow-lg transform hover:scale-105">
-                    + Add New Room
+                    + Add New Menu Item
                 </button>
             </div>
 
@@ -204,33 +247,32 @@ $conn->close();
                         <thead class="bg-gradient-to-r from-indigo-600 to-purple-600 text-white">
                             <tr>
                                 <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">ID</th>
-                                <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Room Number</th>
-                                <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Room Type</th>
-                                <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Capacity Type</th>
-                                <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Status</th>
+                                <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Category</th>
+                                <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Subcategory</th>
+                                <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Food Name</th>
+                                <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Price</th>
                                 <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Actions</th>
                             </tr>
                         </thead>
                         <tbody class="bg-white divide-y divide-gray-200">
-                            <?php while ($row = $rooms->fetch_assoc()): ?>
+                            <?php 
+                            $menuItems->data_seek(0);
+                            while ($row = $menuItems->fetch_assoc()): ?>
                             <tr class="hover:bg-indigo-50 transition-colors">
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo $row['id']; ?></td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900"><?php echo htmlspecialchars($row['room_number']); ?></td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600 capitalize"><?php echo htmlspecialchars($row['room_type']); ?></td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600 capitalize"><?php echo htmlspecialchars($row['capacity_type']); ?></td>
                                 <td class="px-6 py-4 whitespace-nowrap">
-                                    <?php
-                                    $statusClass = [
-                                        'available' => 'bg-green-100 text-green-800',
-                                        'occupied' => 'bg-blue-100 text-blue-800',
-                                        'maintenance' => 'bg-red-100 text-red-800'
-                                    ];
-                                    $status = $row['status'];
-                                    $class = $statusClass[$status] ?? 'bg-gray-100 text-gray-800';
-                                    ?>
-                                    <span class="px-3 py-1 rounded-full text-xs font-semibold capitalize <?php echo $class; ?>">
-                                        <?php echo $status; ?>
+                                    <span class="px-3 py-1 bg-purple-100 text-purple-800 rounded-full text-xs font-semibold">
+                                        <?php echo htmlspecialchars($row['category_name'] ?? 'N/A'); ?>
                                     </span>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <span class="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-semibold">
+                                        <?php echo htmlspecialchars($row['subcategory_name'] ?? 'N/A'); ?>
+                                    </span>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900"><?php echo htmlspecialchars($row['food_name']); ?></td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600 font-semibold">
+                                    Rs <?php echo number_format($row['price'], 2); ?>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
                                     <button onclick="openModal('edit', <?php echo htmlspecialchars(json_encode($row)); ?>)" class="px-3 py-1 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors text-xs">
@@ -253,50 +295,40 @@ $conn->close();
     <div id="modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 md:p-8 animate-slide-up max-h-[90vh] overflow-y-auto">
             <div class="flex justify-between items-center mb-6">
-                <h3 id="modalTitle" class="text-2xl font-bold text-gray-900">Add New Room</h3>
+                <h3 id="modalTitle" class="text-2xl font-bold text-gray-900">Add New Menu Item</h3>
                 <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
             </div>
-            <form method="POST" id="roomForm" class="space-y-4">
+            <form method="POST" id="menuForm" class="space-y-4">
                 <input type="hidden" name="action" id="formAction" value="create">
                 <input type="hidden" name="id" id="formId">
                 
                 <div>
-                    <label for="room_number" class="block text-sm font-semibold text-gray-700 mb-2">Room Number *</label>
-                    <input type="text" id="room_number" name="room_number" required placeholder="e.g., R-101, Room 201" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
-                </div>
-                
-                <div>
-                    <label for="room_type" class="block text-sm font-semibold text-gray-700 mb-2">Room Type *</label>
-                    <select id="room_type" name="room_type" required class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
-                        <option value="">Select Room Type</option>
-                        <option value="deluxe">Deluxe</option>
-                        <option value="standard">Standard</option>
-                        <option value="normal">Normal</option>
+                    <label for="category_id" class="block text-sm font-semibold text-gray-700 mb-2">Category *</label>
+                    <select id="category_id" name="category_id" required onchange="updateSubcategories(this.value)" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
+                        <option value="">Select Category</option>
+                        <?php
+                        $categories->data_seek(0);
+                        while ($cat = $categories->fetch_assoc()): ?>
+                            <option value="<?php echo $cat['id']; ?>"><?php echo htmlspecialchars($cat['category_name']); ?></option>
+                        <?php endwhile; ?>
                     </select>
                 </div>
                 
                 <div>
-                    <label for="capacity_type" class="block text-sm font-semibold text-gray-700 mb-2">Capacity Type *</label>
-                    <select id="capacity_type" name="capacity_type" required class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
-                        <option value="">Select Capacity Type</option>
-                        <option value="single bed">Single Bed</option>
-                        <option value="double bed">Double Bed</option>
-                        <option value="group">Group</option>
+                    <label for="subcategory_id" class="block text-sm font-semibold text-gray-700 mb-2">Subcategory *</label>
+                    <select id="subcategory_id" name="subcategory_id" required class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
+                        <option value="">Select Category First</option>
                     </select>
                 </div>
                 
                 <div>
-                    <label for="status" class="block text-sm font-semibold text-gray-700 mb-2">Status *</label>
-                    <select id="status" name="status" required class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
-                        <option value="available">Available</option>
-                        <option value="occupied">Occupied</option>
-                        <option value="maintenance">Maintenance</option>
-                    </select>
+                    <label for="food_name" class="block text-sm font-semibold text-gray-700 mb-2">Food Name *</label>
+                    <input type="text" id="food_name" name="food_name" required placeholder="e.g., Chicken Biryani, Pizza Margherita" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
                 </div>
                 
                 <div>
-                    <label for="amenities" class="block text-sm font-semibold text-gray-700 mb-2">Amenities</label>
-                    <textarea id="amenities" name="amenities" rows="4" placeholder="e.g., WiFi, TV, AC, Mini Bar" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"></textarea>
+                    <label for="price" class="block text-sm font-semibold text-gray-700 mb-2">Price *</label>
+                    <input type="number" id="price" name="price" step="0.01" min="0.01" required placeholder="0.00" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
                 </div>
                 
                 <div class="flex gap-3 pt-4">
@@ -324,3 +356,4 @@ $conn->close();
     </script>
 </body>
 </html>
+

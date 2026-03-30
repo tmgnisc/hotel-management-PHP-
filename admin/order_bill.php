@@ -1,6 +1,6 @@
 <?php
 session_start();
-require_once 'config/database.php';
+require_once '../config/database.php';
 
 if (!isset($_SESSION['admin_logged_in'])) {
     header('Location: login.php');
@@ -69,6 +69,8 @@ $discount_amount = isset($order['discount_amount']) ? (float)$order['discount_am
 $discountByPercentage = ($subtotal * $discount_percentage) / 100;
 $totalDiscount = $discountByPercentage + $discount_amount;
 $total = isset($order['total_amount']) ? (float)$order['total_amount'] : max(0, $subtotal - $totalDiscount);
+$paidAmount = isset($order['customer_given_amount']) ? (float)$order['customer_given_amount'] : 0;
+$returnAmount = isset($order['return_amount']) ? (float)$order['return_amount'] : max(0, $paidAmount - $total);
 $displayBillNo = formatOrderSerial($order['order_number'] ?? '', $order['id'] ?? $orderId);
 ?>
 <!DOCTYPE html>
@@ -213,6 +215,16 @@ $displayBillNo = formatOrderSerial($order['order_number'] ?? '', $order['id'] ??
                 <span class="font-bold">TOTAL:</span>
                 <span class="font-bold">Rs <?php echo number_format($total, 2); ?></span>
             </div>
+            <?php if ($paidAmount > 0): ?>
+                <div class="flex justify-between text-xs pt-2">
+                    <span class="font-semibold">Paid Amount:</span>
+                    <span class="font-semibold">Rs <?php echo number_format($paidAmount, 2); ?></span>
+                </div>
+                <div class="flex justify-between text-xs pt-1 text-green-700">
+                    <span class="font-semibold">Return Amount:</span>
+                    <span class="font-semibold">Rs <?php echo number_format($returnAmount, 2); ?></span>
+                </div>
+            <?php endif; ?>
         </div>
 
         <div class="text-center mt-4 pt-3 border-t border-gray-300">
