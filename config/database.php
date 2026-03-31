@@ -1,5 +1,6 @@
 <?php
 // Database configuration
+// Database configuration
 define('DB_HOST', 'localhost');
 define('DB_USER', 'root');
 define('DB_PASS', 'admin');
@@ -410,6 +411,17 @@ function initializeDatabase() {
             $alterSql = "ALTER TABLE order_details ADD COLUMN return_amount DECIMAL(10, 2) DEFAULT 0.00 AFTER customer_given_amount";
             $conn->query($alterSql);
         }
+
+        // Ensure order_date remains DATETIME NOT NULL
+        if (in_array('order_date', $existingOrderDetailsColumns)) {
+            $checkColumn = $conn->query("SHOW COLUMNS FROM order_details WHERE Field = 'order_date'");
+            if ($checkColumn && $row = $checkColumn->fetch_assoc()) {
+                if (($row['Null'] ?? 'YES') === 'YES') {
+                    $conn->query("UPDATE order_details SET order_date = COALESCE(order_date, created_at, NOW()) WHERE order_date IS NULL");
+                    $conn->query("ALTER TABLE order_details MODIFY COLUMN order_date DATETIME NOT NULL");
+                }
+            }
+        }
         
         // Ensure payment_status has 'pending' as default
         if (in_array('payment_status', $existingOrderDetailsColumns)) {
@@ -420,6 +432,12 @@ function initializeDatabase() {
                     $conn->query($alterSql);
                 }
             }
+        }
+        
+        // Add paid_date column to track when payment was completed
+        if (!in_array('paid_date', $existingOrderDetailsColumns)) {
+            $alterSql = "ALTER TABLE order_details ADD COLUMN paid_date DATETIME NULL AFTER payment_method";
+            $conn->query($alterSql);
         }
     }
     

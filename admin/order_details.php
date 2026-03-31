@@ -31,6 +31,28 @@ function formatOrderSerial($orderNumber, $orderId = null) {
     return '00000000';
 }
 
+function normalizeOrderDateTimeInput($value) {
+    $value = trim((string)$value);
+    if ($value === '') {
+        return date('Y-m-d H:i:s');
+    }
+
+    // Convert HTML datetime-local format (YYYY-MM-DDTHH:MM[:SS]) to MySQL DATETIME
+    $normalized = str_replace('T', ' ', $value);
+
+    // If seconds are missing, append :00
+    if (preg_match('/^\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}$/', $normalized)) {
+        $normalized .= ':00';
+    }
+
+    $timestamp = strtotime($normalized);
+    if ($timestamp === false) {
+        return date('Y-m-d H:i:s');
+    }
+
+    return date('Y-m-d H:i:s', $timestamp);
+}
+
 function recalculateRegularCustomerAmounts($conn, $customerId) {
     $customerId = intval($customerId);
     if ($customerId <= 0) {
@@ -194,7 +216,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $table_id = !empty($_POST['table_id']) ? intval($_POST['table_id']) : null;
             $regular_customer_id = !empty($_POST['regular_customer_id']) ? intval($_POST['regular_customer_id']) : null;
             // Auto-set to current date/time if not provided
-            $order_date = !empty(trim($_POST['order_date'] ?? '')) ? trim($_POST['order_date']) : date('Y-m-d H:i:s');
+            $order_date = normalizeOrderDateTimeInput($_POST['order_date'] ?? '');
             $order_status = trim($_POST['order_status'] ?? 'pending');
             $payment_status = trim($_POST['payment_status'] ?? 'pending');
             $payment_method = trim($_POST['payment_method'] ?? 'cash');
@@ -260,7 +282,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                                 $updateOrderNoStmt->bind_param("si", $serialOrderNumber, $newOrderId);
                                 $updateOrderNoStmt->execute();
                                 $updateOrderNoStmt->close();
-                                $order_number = $serialOrderNumber;
+                                                $order_number = $serialOrderNumber;
+                            }
+
+                            // If payment was marked paid on creation, set paid_date
+                            $paid_date = (strtolower($payment_status) === 'paid') ? date('Y-m-d H:i:s') : null;
+                            if ($paid_date !== null) {
+                                $setPaidStmt = $conn->prepare("UPDATE order_details SET paid_date = ? WHERE id = ?");
+                                if ($setPaidStmt) {
+                                    $setPaidStmt->bind_param("si", $paid_date, $newOrderId);
+                                    $setPaidStmt->execute();
+                                    $setPaidStmt->close();
+                                }
                             }
 
                             syncOrderTransactionForRegularCustomer($conn, $newOrderId, $regular_customer_id, $total_amount, $order_number, $payment_status);
@@ -291,7 +324,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $table_id = !empty($_POST['table_id']) ? intval($_POST['table_id']) : null;
             $regular_customer_id = !empty($_POST['regular_customer_id']) ? intval($_POST['regular_customer_id']) : null;
             // Auto-set to current date/time if not provided
-            $order_date = !empty(trim($_POST['order_date'] ?? '')) ? trim($_POST['order_date']) : date('Y-m-d H:i:s');
+            $order_date = normalizeOrderDateTimeInput($_POST['order_date'] ?? '');
             $order_status = trim($_POST['order_status'] ?? 'pending');
             $payment_status = trim($_POST['payment_status'] ?? 'pending');
             $payment_method = trim($_POST['payment_method'] ?? 'cash');
@@ -326,10 +359,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         $existingTotalAmount = (float)($existingOrder['total_amount'] ?? 0);
                         $existingOrderNumber = $existingOrder['order_number'] ?? '';
 
-                        if ($existingPaymentStatus === 'paid') {
-                            $message = "This paid order cannot be edited!";
-                            $messageType = 'error';
-                        } elseif ($existingOrderStatus === 'completed') {
+                        if ($existingOrderStatus === 'completed') {
                             $allowedPaymentStatuses = ['pending', 'paid', 'cancelled'];
                             $allowedPaymentMethods = ['cash', 'card', 'online'];
 
@@ -340,13 +370,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                                 $payment_method = 'cash';
                             }
 
-                            $completedPaymentStmt = $conn->prepare("UPDATE order_details SET payment_status = ?, payment_method = ? WHERE id = ?");
+                            // Update payment status/method, paid_date, and order_date in completed-flow edits
+                            $paid_date_val = (strtolower($payment_status) === 'paid') ? date('Y-m-d H:i:s') : null;
+                            $completedPaymentStmt = $conn->prepare("UPDATE order_details SET payment_status = ?, payment_method = ?, paid_date = ?, order_date = ? WHERE id = ?");
                             if ($completedPaymentStmt) {
-                                $completedPaymentStmt->bind_param("ssi", $payment_status, $payment_method, $id);
+                                $completedPaymentStmt->bind_param("ssssi", $payment_status, $payment_method, $paid_date_val, $order_date, $id);
                                 if ($completedPaymentStmt->execute()) {
                                     syncOrderTransactionForRegularCustomer($conn, $id, $existingRegularCustomerId, $existingTotalAmount, $existingOrderNumber, $payment_status);
 
-                                    $message = "Completed order payment details updated successfully!";
+                                    $message = "Completed order details updated successfully!";
                                     $messageType = 'success';
                                     $completedPaymentStmt->close();
                                     $conn->close();
@@ -420,9 +452,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 }
                 $return_amount = max(0, $customer_given_amount - $total_amount);
                 
-                $stmt = $conn->prepare("UPDATE order_details SET table_id=?, regular_customer_id=?, order_date=?, items=?, subtotal=?, discount_percentage=?, discount_amount=?, total_amount=?, customer_given_amount=?, return_amount=?, order_status=?, payment_status=?, payment_method=?, notes=? WHERE id=?");
+                // Set paid_date based on new payment_status
+                $paid_date_val = (strtolower($payment_status) === 'paid') ? date('Y-m-d H:i:s') : null;
+
+                $stmt = $conn->prepare("UPDATE order_details SET table_id=?, regular_customer_id=?, order_date=?, items=?, subtotal=?, discount_percentage=?, discount_amount=?, total_amount=?, customer_given_amount=?, return_amount=?, order_status=?, payment_status=?, payment_method=?, paid_date = ?, notes=? WHERE id=?");
                 if ($stmt) {
-                    $stmt->bind_param("iissddddddssssi", $table_id, $regular_customer_id, $order_date, $itemsJson, $subtotal, $discount_percentage, $discount_amount, $total_amount, $customer_given_amount, $return_amount, $order_status, $payment_status, $payment_method, $notes, $id);
+                    $stmt->bind_param("iissddddddsssssi", $table_id, $regular_customer_id, $order_date, $itemsJson, $subtotal, $discount_percentage, $discount_amount, $total_amount, $customer_given_amount, $return_amount, $order_status, $payment_status, $payment_method, $paid_date_val, $notes, $id);
                     if ($stmt->execute()) {
                         $orderNoStmt = $conn->prepare("SELECT order_number FROM order_details WHERE id = ?");
                         $currentOrderNumber = '';
@@ -645,7 +680,6 @@ $conn->close();
                 var fieldIds = [
                     'table_id',
                     'regular_customer_search',
-                    'order_date',
                     'foodSearch',
                     'discount_percentage',
                     'discount_amount',
@@ -685,7 +719,7 @@ $conn->close();
 
             function setCompletedPaymentEditMode(isCompletedPaymentOnly, noticeText) {
                 var orderStatusOnlyNotice = document.getElementById('orderStatusOnlyNotice');
-                noticeText = noticeText || 'This order is completed. Only <strong>Payment Status</strong> and <strong>Payment Method</strong> can be edited.';
+                noticeText = noticeText || 'This order is completed. Only <strong>Payment Status</strong>, <strong>Payment Method</strong>, and <strong>Order Date &amp; Time</strong> can be edited.<br><strong>Action Required:</strong> Please update your order date and time.';
 
                 if (orderStatusOnlyNotice) {
                     if (isCompletedPaymentOnly) {
@@ -699,7 +733,6 @@ $conn->close();
                 var fieldIds = [
                     'table_id',
                     'regular_customer_search',
-                    'order_date',
                     'foodSearch',
                     'discount_percentage',
                     'discount_amount',
@@ -726,6 +759,14 @@ $conn->close();
                     paymentMethodField.disabled = false;
                 }
 
+                var orderDateField = document.getElementById('order_date');
+                if (orderDateField) {
+                    orderDateField.disabled = false;
+                    if (isCompletedPaymentOnly) {
+                        orderDateField.readOnly = false;
+                    }
+                }
+
                 var foodItemsContainer = document.getElementById('foodItemsContainer');
                 if (foodItemsContainer) {
                     var itemControls = foodItemsContainer.querySelectorAll('input, button, select, textarea');
@@ -739,6 +780,20 @@ $conn->close();
             openModal = function(action, data) {
                 var modal = document.getElementById('modal');
                 var form = document.getElementById('orderForm');
+                var orderDateField = document.getElementById('order_date');
+                var paymentStatusFieldEl = document.getElementById('payment_status');
+                var orderStatusFieldEl = document.getElementById('order_status');
+
+                // Single source of truth for order_date editability
+                function syncOrderDateEditability() {
+                    var od = orderDateField || document.getElementById('order_date');
+                    if (!od) return;
+
+                    // Keep Order Date & Time editable for both pending/normal and completed flows
+                    // (Do not lock by payment status)
+                    od.disabled = false;
+                    od.readOnly = false;
+                }
                 
                 if (!modal || !form) {
                     console.error('Modal or form not found');
@@ -747,10 +802,6 @@ $conn->close();
 
                 var isPaidStatus = String((data && data.payment_status) || '').toLowerCase() === 'paid';
                 var isCompletedStatus = String((data && data.order_status) || '').toLowerCase() === 'completed';
-                if (action === 'edit' && data && isPaidStatus) {
-                    alert('This order is already paid, so editing is disabled. You can print the bill.');
-                    return;
-                }
                 
                 // Set form action: 'create' for new, 'update' for edit
                 var formAction = action === 'edit' ? 'update' : 'create';
@@ -763,13 +814,34 @@ $conn->close();
                 var foodItemsContainer = document.getElementById('foodItemsContainer');
                 foodItemsContainer.innerHTML = '';
                 selectedFoods = [];
-                
+
+                if (action === 'create') {
+                    // Auto-fill order_date with client's local datetime
+                    var odField = document.getElementById('order_date');
+                    if (odField) {
+                        var now = new Date();
+                        function pad(n){return n<10? '0'+n : n}
+                        // datetime-local expects YYYY-MM-DDTHH:MM (seconds optional)
+                        var localValue = now.getFullYear() + '-' + pad(now.getMonth()+1) + '-' + pad(now.getDate()) + 'T' + pad(now.getHours()) + ':' + pad(now.getMinutes());
+                        odField.value = localValue;
+                        odField.disabled = false;
+                        odField.readOnly = false;
+                    }
+                }
+
                 if (action === 'edit' && data) {
+                    // For edit, keep order_date editable in all statuses
+                    var odField = document.getElementById('order_date');
+                    if (odField) {
+                        odField.disabled = false;
+                        odField.readOnly = false;
+                    }
                     document.getElementById('formId').value = data.id || '';
                     document.getElementById('table_id').value = data.table_id || '';
                     document.getElementById('regular_customer_id').value = data.regular_customer_id || '';
                     
                     // Set customer search input if customer is selected
+
                     if (data.regular_customer_id && regularCustomersData[data.regular_customer_id]) {
                         var customer = regularCustomersData[data.regular_customer_id];
                         document.getElementById('regular_customer_search').value = customer.name + ' - ' + customer.phone;
@@ -778,7 +850,7 @@ $conn->close();
                     }
                     
                     // Format datetime for input
-                    var orderDate = data.order_date ? new Date(data.order_date.replace(' ', 'T')).toISOString().slice(0, 16) : '';
+                    var orderDate = data.order_date ? String(data.order_date).replace(' ', 'T').slice(0, 16) : '';
                     document.getElementById('order_date').value = orderDate;
                     
                     document.getElementById('order_status').value = data.order_status || 'pending';
@@ -792,8 +864,8 @@ $conn->close();
 
                     var currentOrderStatus = String(data.order_status || '').toLowerCase();
                     if (currentOrderStatus === 'completed') {
-                        setCompletedPaymentEditMode(true, 'This order is completed. Only <strong>Payment Status</strong> and <strong>Payment Method</strong> can be edited.');
-                        document.getElementById('modalTitle').textContent = 'Edit Payment Details';
+                        setCompletedPaymentEditMode(true, 'This order is completed. Only <strong>Payment Status</strong>, <strong>Payment Method</strong>, and <strong>Order Date &amp; Time</strong> can be edited.<br><strong>Action Required:</strong> Please update your order date and time.');
+                        document.getElementById('modalTitle').textContent = 'Edit Completed Order';
                     } else {
                         setOrderStatusOnlyEditMode(false, false, '');
                         setCompletedPaymentEditMode(false, '');
@@ -831,6 +903,116 @@ $conn->close();
                     var hours = String(now.getHours()).padStart(2, '0');
                     var minutes = String(now.getMinutes()).padStart(2, '0');
                     document.getElementById('order_date').value = year + '-' + month + '-' + day + 'T' + hours + ':' + minutes;
+                }
+
+                if (paymentStatusFieldEl && !paymentStatusFieldEl._orderDateSyncAttached) {
+                    paymentStatusFieldEl.addEventListener('change', syncOrderDateEditability);
+                    paymentStatusFieldEl._orderDateSyncAttached = true;
+                }
+                if (orderStatusFieldEl && !orderStatusFieldEl._orderDateSyncAttached) {
+                    orderStatusFieldEl.addEventListener('change', syncOrderDateEditability);
+                    orderStatusFieldEl._orderDateSyncAttached = true;
+                }
+                syncOrderDateEditability();
+
+                // Ensure order form uses client local time if order_date left empty on submit
+                var orderForm = document.getElementById('orderForm');
+                if (orderForm && !orderForm._localSubmitHandlerAttached) {
+                    orderForm.addEventListener('submit', function(ev){
+                        var od = document.getElementById('order_date');
+                        if (od && (!od.value || String(od.value).trim() === '')) {
+                            var now = new Date();
+                            function pad(n){return n<10? '0'+n : n}
+                            var localMysql = now.getFullYear() + '-' + pad(now.getMonth()+1) + '-' + pad(now.getDate()) + ' ' + pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds());
+                            od.value = localMysql;
+                        }
+                    });
+                    orderForm._localSubmitHandlerAttached = true;
+                }
+                // Attach listener to payment_status change for real-time update
+                var paymentStatusField = document.getElementById('payment_status');
+                if (paymentStatusField) {
+                    paymentStatusField.onchange = function(e) {
+                        var newStatus = String(paymentStatusField.value || '').toLowerCase();
+                        syncOrderDateEditability();
+
+                        var orderId = document.getElementById('formId').value || '';
+                        if (!orderId) return;
+
+                        // Only call endpoint if status actually changed to paid or from paid (to clear)
+                        var payload = new FormData();
+                        payload.append('id', orderId);
+                        payload.append('payment_status', newStatus);
+                        var pm = document.getElementById('payment_method');
+                        payload.append('payment_method', pm ? pm.value : 'cash');
+                        // Append client local order_date so server can use local time if desired
+                        try {
+                            var now = new Date();
+                            function pad(n){return n<10? '0'+n : n}
+                            var localMysql = now.getFullYear() + '-' + pad(now.getMonth()+1) + '-' + pad(now.getDate()) + ' ' + pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds());
+                            payload.append('order_date', localMysql);
+                        } catch (e) {
+                            // ignore
+                        }
+
+                        fetch('api/update_payment_status.php', {
+                            method: 'POST',
+                            credentials: 'same-origin',
+                            body: payload
+                        }).then(function(resp) {
+                            return resp.json();
+                        }).then(function(json) {
+                            if (json && json.success) {
+                                // Update badge in table row
+                                var row = document.querySelector('tr[data-order-id="' + orderId + '"]');
+                                if (row) {
+                                    var badge = row.querySelector('td:nth-child(6) span');
+                                    if (badge) {
+                                        // Update text
+                                        badge.textContent = newStatus;
+                                        // Update classes
+                                        badge.className = 'px-3 py-1 rounded-full text-xs font-semibold capitalize ' + (newStatus === 'paid' ? 'bg-green-100 text-green-800' : (newStatus === 'pending' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'));
+                                    }
+
+                                    // Update payment method text (second small span)
+                                    var methodSpan = row.querySelector('td:nth-child(6) .text-xs');
+                                    if (methodSpan) {
+                                        methodSpan.textContent = (pm ? pm.value : 'N/A');
+                                    }
+
+                                    // Update order date cell (4th column) if server returned order_date
+                                    if (json.order_date) {
+                                        var dateCell = row.querySelector('td:nth-child(4)');
+                                        if (dateCell) {
+                                            try {
+                                                var d = new Date(json.order_date.replace(' ', 'T'));
+                                                var opts = { month: 'short', day: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' };
+                                                dateCell.textContent = d.toLocaleString('en-US', opts).replace(',', '');
+                                            } catch (e) {
+                                                // Fallback to raw string
+                                                dateCell.textContent = json.order_date;
+                                            }
+                                        }
+                                    }
+                                }
+                                // Optionally show tiny notice
+                                var notice = document.getElementById('ajaxNotice');
+                                if (!notice) {
+                                    notice = document.createElement('div');
+                                    notice.id = 'ajaxNotice';
+                                    notice.className = 'fixed top-20 right-6 bg-green-50 border-l-4 border-green-500 text-green-700 p-3 rounded-lg';
+                                    notice.textContent = 'Payment status updated';
+                                    document.body.appendChild(notice);
+                                    setTimeout(function(){ notice.remove(); }, 2500);
+                                }
+                            } else {
+                                alert('Unable to update payment status: ' + (json.message || 'unknown'));
+                            }
+                        }).catch(function(err){
+                            console.error(err);
+                            alert('Network error while updating payment status');
+                        });
+                    };
                 }
                 
                 calculateTotal();
@@ -1422,7 +1604,7 @@ $conn->close();
                                 while ($row = $pendingOrders->fetch_assoc()): 
                                     $hasPendingOrders = true;
                                 ?>
-                                <tr class="hover:bg-yellow-50 transition-colors">
+                                <tr data-order-id="<?php echo $row['id']; ?>" class="hover:bg-yellow-50 transition-colors">
                                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo $row['id']; ?></td>
                                     <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                                         <?php if (!empty($row['reg_customer_name'])): ?>
@@ -1467,8 +1649,8 @@ $conn->close();
                                         <?php $isCompleted = (($row['order_status'] ?? '') === 'completed'); ?>
                                         <?php $isLinkedEditLocked = false; ?>
                                         <?php $isDeleteLocked = ($isPaid && $isCompleted); ?>
-                                        <?php if ($isPaid || $isLinkedEditLocked): ?>
-                                            <button type="button" disabled class="px-3 py-1 bg-gray-300 text-gray-600 rounded-md cursor-not-allowed opacity-70 text-xs" title="Paid orders cannot be edited">
+                                        <?php if ($isLinkedEditLocked): ?>
+                                            <button type="button" disabled class="px-3 py-1 bg-gray-300 text-gray-600 rounded-md cursor-not-allowed opacity-70 text-xs" title="Paid non-completed orders cannot be edited">
                                                 Edit
                                             </button>
                                         <?php else: ?>
@@ -1527,7 +1709,7 @@ $conn->close();
                         </thead>
                         <tbody class="bg-white divide-y divide-gray-200">
                             <?php while ($row = $orders->fetch_assoc()): ?>
-                            <tr class="hover:bg-indigo-50 transition-colors">
+                            <tr data-order-id="<?php echo $row['id']; ?>" class="hover:bg-indigo-50 transition-colors">
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo $row['id']; ?></td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                                     <?php if (!empty($row['reg_customer_name'])): ?>
@@ -1585,8 +1767,8 @@ $conn->close();
                                     <?php $isCompleted = (($row['order_status'] ?? '') === 'completed'); ?>
                                     <?php $isLinkedEditLocked = false; ?>
                                     <?php $isDeleteLocked = ($isPaid && $isCompleted); ?>
-                                    <?php if ($isPaid || $isLinkedEditLocked): ?>
-                                        <button type="button" disabled class="px-3 py-1 bg-gray-300 text-gray-600 rounded-md cursor-not-allowed opacity-70 text-xs" title="Paid orders cannot be edited">
+                                    <?php if ($isLinkedEditLocked): ?>
+                                        <button type="button" disabled class="px-3 py-1 bg-gray-300 text-gray-600 rounded-md cursor-not-allowed opacity-70 text-xs" title="Paid non-completed orders cannot be edited">
                                             Edit
                                         </button>
                                     <?php else: ?>
@@ -1672,7 +1854,7 @@ $conn->close();
                 
                 <div>
                     <label for="order_date" class="block text-sm font-semibold text-gray-700 mb-2">Order Date & Time <span class="text-gray-500 text-xs">(Auto-filled with current date/time)</span></label>
-                    <input type="datetime-local" id="order_date" name="order_date" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
+                    <input type="datetime-local" id="order_date" name="order_date" required class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
                 </div>
                 
                 <div>
