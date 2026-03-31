@@ -658,6 +658,32 @@ $conn->close();
                 };
             <?php endwhile; ?>
 
+            // Helper to set order_date input to client's current local time (and optionally start a live update)
+            function setOrderDateNow(startInterval) {
+                startInterval = !!startInterval;
+                var od = document.getElementById('order_date');
+                if (!od) return;
+
+                function pad(n){return n<10? '0'+n : n}
+                var now = new Date();
+                var localValue = now.getFullYear() + '-' + pad(now.getMonth()+1) + '-' + pad(now.getDate()) + 'T' + pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds());
+                // datetime-local sometimes ignores seconds; set a safe length
+                od.value = localValue.slice(0, 19);
+
+                // If requested, keep updating every second
+                if (startInterval) {
+                    if (!od._nowInterval) {
+                        od._nowInterval = setInterval(function(){
+                            try {
+                                var dnow = new Date();
+                                var v = dnow.getFullYear() + '-' + pad(dnow.getMonth()+1) + '-' + pad(dnow.getDate()) + 'T' + pad(dnow.getHours()) + ':' + pad(dnow.getMinutes()) + ':' + pad(dnow.getSeconds());
+                                od.value = v.slice(0,19);
+                            } catch (e) { }
+                        }, 1000);
+                    }
+                }
+            }
+
             function setOrderStatusOnlyEditMode(isOrderStatusOnly, allowPaymentStatus, noticeText) {
                 var orderStatusOnlyInput = document.getElementById('order_status_only_update');
                 var orderStatusOnlyNotice = document.getElementById('orderStatusOnlyNotice');
@@ -816,14 +842,11 @@ $conn->close();
                 selectedFoods = [];
 
                 if (action === 'create') {
-                    // Auto-fill order_date with client's local datetime
+                    // Auto-fill order_date with client's local datetime and keep it updated in real-time
                     var odField = document.getElementById('order_date');
                     if (odField) {
-                        var now = new Date();
-                        function pad(n){return n<10? '0'+n : n}
-                        // datetime-local expects YYYY-MM-DDTHH:MM (seconds optional)
-                        var localValue = now.getFullYear() + '-' + pad(now.getMonth()+1) + '-' + pad(now.getDate()) + 'T' + pad(now.getHours()) + ':' + pad(now.getMinutes());
-                        odField.value = localValue;
+                        // Use the shared helper which also supports starting a live update interval
+                        setOrderDateNow(true);
                         odField.disabled = false;
                         odField.readOnly = false;
                     }
@@ -1039,6 +1062,16 @@ $conn->close();
                 var modal = document.getElementById('modal');
                 if (modal) {
                     modal.classList.add('hidden');
+                }
+                // Clear any running auto-now interval for order_date
+                try {
+                    var od = document.getElementById('order_date');
+                    if (od && od._nowInterval) {
+                        clearInterval(od._nowInterval);
+                        od._nowInterval = null;
+                    }
+                } catch (e) {
+                    // ignore
                 }
             };
             
@@ -1504,6 +1537,13 @@ $conn->close();
                         initFoodSearch();
                         initRegularCustomerSearch();
                         handleAutoBillPrintPrompt();
+                        // Bind "Now" button for order_date if present
+                        var nowBtn = document.getElementById('order_date_now_btn');
+                        if (nowBtn) {
+                            nowBtn.addEventListener('click', function() {
+                                try { setOrderDateNow(true); } catch(e) { }
+                            });
+                        }
                     }, 200);
                 });
             } else {
@@ -1511,6 +1551,13 @@ $conn->close();
                     initFoodSearch();
                     initRegularCustomerSearch();
                     handleAutoBillPrintPrompt();
+                    // Bind "Now" button for order_date if present
+                    var nowBtn = document.getElementById('order_date_now_btn');
+                    if (nowBtn) {
+                        nowBtn.addEventListener('click', function() {
+                            try { setOrderDateNow(true); } catch(e) { }
+                        });
+                    }
                 }, 200);
             }
         })();
@@ -1854,7 +1901,10 @@ $conn->close();
                 
                 <div>
                     <label for="order_date" class="block text-sm font-semibold text-gray-700 mb-2">Order Date & Time <span class="text-gray-500 text-xs">(Auto-filled with current date/time)</span></label>
-                    <input type="datetime-local" id="order_date" name="order_date" required class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
+                    <div class="flex items-center gap-2">
+                        <input type="datetime-local" id="order_date" name="order_date" required class="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
+                        <button type="button" id="order_date_now_btn" class="px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm">Now</button>
+                    </div>
                 </div>
                 
                 <div>
