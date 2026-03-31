@@ -546,14 +546,50 @@ if (isset($_GET['msg'])) {
     $messageType = $_GET['type'] ?? 'success';
 }
 
-// View mode: 'today' (default), 'yesterday', or 'all'
+// View mode: 'today' (default), 'yesterday', 'pending', 'custom', or 'all'
 $requestedView = $_GET['view'] ?? 'today';
-$allowedViews = ['today', 'yesterday', 'all'];
+$allowedViews = ['today', 'yesterday', 'pending', 'custom', 'all'];
 $viewMode = in_array($requestedView, $allowedViews, true) ? $requestedView : 'today';
+
+$startDateInput = trim((string)($_GET['start_date'] ?? ''));
+$endDateInput = trim((string)($_GET['end_date'] ?? ''));
+
+$isValidDateString = function ($dateString) {
+    if ($dateString === '') {
+        return false;
+    }
+
+    $dt = DateTime::createFromFormat('Y-m-d', $dateString);
+    return $dt && $dt->format('Y-m-d') === $dateString;
+};
+
+$isCustomRangeValid = false;
+$customStartDate = '';
+$customEndDate = '';
+
+if ($viewMode === 'custom' && $isValidDateString($startDateInput) && $isValidDateString($endDateInput)) {
+    $startObj = DateTime::createFromFormat('Y-m-d', $startDateInput);
+    $endObj = DateTime::createFromFormat('Y-m-d', $endDateInput);
+    if ($startObj && $endObj && $startObj <= $endObj) {
+        $isCustomRangeValid = true;
+        $customStartDate = $startDateInput;
+        $customEndDate = $endDateInput;
+    }
+}
+
+if ($viewMode === 'custom' && !$isCustomRangeValid) {
+    $viewMode = 'today';
+}
+
+$todayDate = date('Y-m-d');
+$customStartDateValue = $customStartDate !== '' ? $customStartDate : $todayDate;
+$customEndDateValue = $customEndDate !== '' ? $customEndDate : $todayDate;
 
 $pendingDateFilters = [
     'today' => "AND DATE(o.order_date) = CURDATE()",
     'yesterday' => "AND DATE(o.order_date) = DATE_SUB(CURDATE(), INTERVAL 1 DAY)",
+    'pending' => '',
+    'custom' => '',
     'all' => ''
 ];
 $dateWhereClause = $pendingDateFilters[$viewMode] ?? $pendingDateFilters['today'];
@@ -561,13 +597,24 @@ $dateWhereClause = $pendingDateFilters[$viewMode] ?? $pendingDateFilters['today'
 $allDateFilters = [
     'today' => "WHERE DATE(o.order_date) = CURDATE()",
     'yesterday' => "WHERE DATE(o.order_date) = DATE_SUB(CURDATE(), INTERVAL 1 DAY)",
+    'pending' => "WHERE (o.order_status = 'pending' OR (o.order_status = 'completed' AND o.payment_status = 'pending'))",
+    'custom' => '',
     'all' => ''
 ];
 $allDateFilter = $allDateFilters[$viewMode] ?? $allDateFilters['today'];
 
+if ($viewMode === 'custom' && $isCustomRangeValid) {
+    $startSafe = $conn->real_escape_string($customStartDate);
+    $endSafe = $conn->real_escape_string($customEndDate);
+    $dateWhereClause = "AND DATE(o.order_date) BETWEEN '{$startSafe}' AND '{$endSafe}'";
+    $allDateFilter = "WHERE DATE(o.order_date) BETWEEN '{$startSafe}' AND '{$endSafe}'";
+}
+
 $viewLabelMap = [
     'today' => 'Today',
     'yesterday' => 'Yesterday',
+    'pending' => 'Pending Orders',
+    'custom' => 'Custom Range',
     'all' => 'All Time'
 ];
 $viewLabel = $viewLabelMap[$viewMode] ?? 'Today';
@@ -1599,43 +1646,74 @@ $conn->close();
                             📅 Showing <strong>today's</strong> orders
                         <?php elseif ($viewMode === 'yesterday'): ?>
                             🕘 Showing <strong>yesterday's</strong> orders
+                        <?php elseif ($viewMode === 'pending'): ?>
+                            ⏳ Showing <strong>pending</strong> orders
+                        <?php elseif ($viewMode === 'custom'): ?>
+                            🗓️ Showing <strong>custom range</strong> orders (<?php echo htmlspecialchars($customStartDateValue); ?> to <?php echo htmlspecialchars($customEndDateValue); ?>)
                         <?php else: ?>
                             📋 Showing <strong>all</strong> orders
                         <?php endif; ?>
                     </p>
                 </div>
-                <div class="flex flex-wrap gap-3">
-                    <?php if ($viewMode !== 'yesterday'): ?>
-                        <a href="?view=yesterday" class="px-5 py-2.5 bg-amber-600 text-white rounded-lg font-semibold hover:bg-amber-700 transition-all shadow-md text-sm flex items-center gap-2">
-                             Yesterday Orders
-                        </a>
-                    <?php else: ?>
-                        <span class="px-5 py-2.5 bg-amber-100 text-amber-700 rounded-lg font-semibold shadow-sm text-sm flex items-center gap-2 cursor-default">
-                             Yesterday Orders
-                        </span>
-                    <?php endif; ?>
-                    <?php if ($viewMode !== 'today'): ?>
-                        <a href="?view=today" class="px-5 py-2.5 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-all shadow-md text-sm flex items-center gap-2">
-                             Today Orders
-                        </a>
-                    <?php else: ?>
-                        <span class="px-5 py-2.5 bg-blue-100 text-blue-700 rounded-lg font-semibold shadow-sm text-sm flex items-center gap-2 cursor-default">
-                             Today Orders
-                        </span>
-                    <?php endif; ?>
+                <div class="w-full sm:w-auto flex flex-col gap-3">
+                    <div class="flex flex-wrap gap-2">
+                        <?php if ($viewMode !== 'yesterday'): ?>
+                            <a href="?view=yesterday" class="px-4 py-2.5 bg-amber-600 text-white rounded-lg font-semibold hover:bg-amber-700 transition-all shadow-sm text-sm">
+                                Yesterday Orders
+                            </a>
+                        <?php else: ?>
+                            <span class="px-4 py-2.5 bg-amber-100 text-amber-700 rounded-lg font-semibold shadow-sm text-sm cursor-default">
+                                Yesterday Orders
+                            </span>
+                        <?php endif; ?>
 
-                    <?php if ($viewMode !== 'all'): ?>
-                        <a href="?view=all" class="px-5 py-2.5 bg-gray-700 text-white rounded-lg font-semibold hover:bg-gray-800 transition-all shadow-md text-sm flex items-center gap-2">
-                             View All Orders
-                        </a>
-                    <?php else: ?>
-                        <span class="px-5 py-2.5 bg-gray-200 text-gray-700 rounded-lg font-semibold shadow-sm text-sm flex items-center gap-2 cursor-default">
-                             View All Orders
-                        </span>
-                    <?php endif; ?>
-                    <button onclick="openModal('create')" class="px-6 py-2.5 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-all shadow-md hover:shadow-lg">
-                        + Add New Order
-                    </button>
+                        <?php if ($viewMode !== 'today'): ?>
+                            <a href="?view=today" class="px-4 py-2.5 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-all shadow-sm text-sm">
+                                Today Orders
+                            </a>
+                        <?php else: ?>
+                            <span class="px-4 py-2.5 bg-blue-100 text-blue-700 rounded-lg font-semibold shadow-sm text-sm cursor-default">
+                                Today Orders
+                            </span>
+                        <?php endif; ?>
+
+                        <?php if ($viewMode !== 'pending'): ?>
+                            <a href="?view=pending" class="px-4 py-2.5 bg-yellow-600 text-white rounded-lg font-semibold hover:bg-yellow-700 transition-all shadow-sm text-sm">
+                                Pending Orders
+                            </a>
+                        <?php else: ?>
+                            <span class="px-4 py-2.5 bg-yellow-100 text-yellow-700 rounded-lg font-semibold shadow-sm text-sm cursor-default">
+                                Pending Orders
+                            </span>
+                        <?php endif; ?>
+
+                        <?php if ($viewMode !== 'all'): ?>
+                            <a href="?view=all" class="px-4 py-2.5 bg-gray-700 text-white rounded-lg font-semibold hover:bg-gray-800 transition-all shadow-sm text-sm">
+                                View All Orders
+                            </a>
+                        <?php else: ?>
+                            <span class="px-4 py-2.5 bg-gray-200 text-gray-700 rounded-lg font-semibold shadow-sm text-sm cursor-default">
+                                View All Orders
+                            </span>
+                        <?php endif; ?>
+                    </div>
+
+                    <div class="flex flex-wrap items-center gap-2">
+                        <form method="GET" action="" class="flex flex-wrap items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2 shadow-sm">
+                        <input type="hidden" name="view" value="custom">
+                            <label for="start_date" class="text-xs font-semibold text-gray-600">From</label>
+                            <input type="date" id="start_date" name="start_date" value="<?php echo htmlspecialchars($customStartDateValue); ?>" class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none" required>
+                            <label for="end_date" class="text-xs font-semibold text-gray-600">To</label>
+                            <input type="date" id="end_date" name="end_date" value="<?php echo htmlspecialchars($customEndDateValue); ?>" class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none" required>
+                            <button type="submit" class="px-4 py-2 bg-emerald-600 text-white rounded-lg font-semibold hover:bg-emerald-700 transition-all shadow-sm text-sm">
+                                Custom View
+                            </button>
+                        </form>
+
+                        <button onclick="openModal('create')" class="px-5 py-2.5 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-all shadow-sm text-sm">
+                            + Add New Order
+                        </button>
+                    </div>
                 </div>
             </div>
 
