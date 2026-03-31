@@ -658,26 +658,46 @@ $conn->close();
                 };
             <?php endwhile; ?>
 
+            // Format date object to: Mar 31, 2026 15:17
+            function formatOrderDateDisplay(dateObj) {
+                if (!(dateObj instanceof Date) || isNaN(dateObj.getTime())) {
+                    dateObj = new Date(Date.now());
+                }
+                var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                function pad(n){ return n < 10 ? '0' + n : String(n); }
+                return months[dateObj.getMonth()] + ' ' + dateObj.getDate() + ', ' + dateObj.getFullYear() + ' ' + pad(dateObj.getHours()) + ':' + pad(dateObj.getMinutes());
+            }
+
+            // Parse backend/raw date and show in display format
+            function parseAndFormatOrderDate(rawValue) {
+                var raw = String(rawValue || '').trim();
+                if (!raw) return '';
+                var dt = new Date(raw.replace(' ', 'T'));
+                if (isNaN(dt.getTime())) {
+                    dt = new Date(raw);
+                }
+                if (isNaN(dt.getTime())) {
+                    return raw;
+                }
+                return formatOrderDateDisplay(dt);
+            }
+
             // Helper to set order_date input to client's current local time (and optionally start a live update)
             function setOrderDateNow(startInterval) {
                 startInterval = !!startInterval;
                 var od = document.getElementById('order_date');
                 if (!od) return;
 
-                function pad(n){return n<10? '0'+n : n}
-                var now = new Date();
-                var localValue = now.getFullYear() + '-' + pad(now.getMonth()+1) + '-' + pad(now.getDate()) + 'T' + pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds());
-                // datetime-local sometimes ignores seconds; set a safe length
-                od.value = localValue.slice(0, 19);
+                var now = new Date(Date.now());
+                od.value = formatOrderDateDisplay(now);
 
                 // If requested, keep updating every second
                 if (startInterval) {
                     if (!od._nowInterval) {
                         od._nowInterval = setInterval(function(){
                             try {
-                                var dnow = new Date();
-                                var v = dnow.getFullYear() + '-' + pad(dnow.getMonth()+1) + '-' + pad(dnow.getDate()) + 'T' + pad(dnow.getHours()) + ':' + pad(dnow.getMinutes()) + ':' + pad(dnow.getSeconds());
-                                od.value = v.slice(0,19);
+                                var dnow = new Date(Date.now());
+                                od.value = formatOrderDateDisplay(dnow);
                             } catch (e) { }
                         }, 1000);
                     }
@@ -826,6 +846,15 @@ $conn->close();
                     return;
                 }
 
+                // Stop any previous live update timer before opening fresh state
+                try {
+                    var existingOd = document.getElementById('order_date');
+                    if (existingOd && existingOd._nowInterval) {
+                        clearInterval(existingOd._nowInterval);
+                        existingOd._nowInterval = null;
+                    }
+                } catch (e) { }
+
                 var isPaidStatus = String((data && data.payment_status) || '').toLowerCase() === 'paid';
                 var isCompletedStatus = String((data && data.order_status) || '').toLowerCase() === 'completed';
                 
@@ -872,8 +901,8 @@ $conn->close();
                         document.getElementById('regular_customer_search').value = '';
                     }
                     
-                    // Format datetime for input
-                    var orderDate = data.order_date ? String(data.order_date).replace(' ', 'T').slice(0, 16) : '';
+                    // Format existing order date for display input
+                    var orderDate = data.order_date ? parseAndFormatOrderDate(data.order_date) : '';
                     document.getElementById('order_date').value = orderDate;
                     
                     document.getElementById('order_status').value = data.order_status || 'pending';
@@ -919,13 +948,7 @@ $conn->close();
                     document.getElementById('paid_amount').value = '0';
                     document.getElementById('return_amount').value = '0';
                     // Always set current date/time for new orders
-                    var now = new Date();
-                    var year = now.getFullYear();
-                    var month = String(now.getMonth() + 1).padStart(2, '0');
-                    var day = String(now.getDate()).padStart(2, '0');
-                    var hours = String(now.getHours()).padStart(2, '0');
-                    var minutes = String(now.getMinutes()).padStart(2, '0');
-                    document.getElementById('order_date').value = year + '-' + month + '-' + day + 'T' + hours + ':' + minutes;
+                    setOrderDateNow(false);
                 }
 
                 if (paymentStatusFieldEl && !paymentStatusFieldEl._orderDateSyncAttached) {
@@ -944,10 +967,8 @@ $conn->close();
                     orderForm.addEventListener('submit', function(ev){
                         var od = document.getElementById('order_date');
                         if (od && (!od.value || String(od.value).trim() === '')) {
-                            var now = new Date();
-                            function pad(n){return n<10? '0'+n : n}
-                            var localMysql = now.getFullYear() + '-' + pad(now.getMonth()+1) + '-' + pad(now.getDate()) + ' ' + pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds());
-                            od.value = localMysql;
+                            // Keep order_date non-empty in display format before submit
+                            setOrderDateNow(false);
                         }
                     });
                     orderForm._localSubmitHandlerAttached = true;
@@ -968,12 +989,14 @@ $conn->close();
                         payload.append('payment_status', newStatus);
                         var pm = document.getElementById('payment_method');
                         payload.append('payment_method', pm ? pm.value : 'cash');
-                        // Append client local order_date so server can use local time if desired
+                        // Append client order_date in display format (e.g., Mar 31, 2026 15:17)
                         try {
-                            var now = new Date();
-                            function pad(n){return n<10? '0'+n : n}
-                            var localMysql = now.getFullYear() + '-' + pad(now.getMonth()+1) + '-' + pad(now.getDate()) + ' ' + pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds());
-                            payload.append('order_date', localMysql);
+                            var odLive = document.getElementById('order_date');
+                            if (odLive && String(odLive.value || '').trim() !== '') {
+                                payload.append('order_date', String(odLive.value).trim());
+                            } else {
+                                payload.append('order_date', formatOrderDateDisplay(new Date(Date.now())));
+                            }
                         } catch (e) {
                             // ignore
                         }
@@ -1902,7 +1925,7 @@ $conn->close();
                 <div>
                     <label for="order_date" class="block text-sm font-semibold text-gray-700 mb-2">Order Date & Time <span class="text-gray-500 text-xs">(Auto-filled with current date/time)</span></label>
                     <div class="flex items-center gap-2">
-                        <input type="datetime-local" id="order_date" name="order_date" required class="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
+                        <input type="text" id="order_date" name="order_date" required placeholder="Mar 31, 2026 15:17" class="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
                         <button type="button" id="order_date_now_btn" class="px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm">Now</button>
                     </div>
                 </div>
